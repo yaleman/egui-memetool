@@ -36,8 +36,8 @@
         "icons/icon.icns",
         "icons/icon.ico"
       ],
-      "identifier": "com.tauri.dev",
-      "longDescription": "",
+      "identifier": "com.terminaloutcomes.memetool",
+      "longDescription": "Memetool allows you to mess with your memes.",
       "macOS": {
         "entitlements": null,
         "exceptionDomain": "",
