@@ -4,11 +4,8 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
 
+use memetool_shared::FileList;
 
-#[derive(Deserialize, Serialize)]
-pub struct FileList {
-    files: Vec<String>
-}
 
 #[wasm_bindgen]
 extern "C" {
@@ -25,9 +22,13 @@ struct PathArgs<'a> {
     path: &'a str,
 }
 
+
+
 #[function_component(App)]
 pub fn app() -> Html {
     let greet_input_ref = use_node_ref();
+    let file_path_ref = use_node_ref();
+
 
     let file_path = use_state(|| String::new());
     let files_list: UseStateHandle<Vec<String>> = use_state(|| vec![] );
@@ -41,10 +42,6 @@ pub fn app() -> Html {
         use_effect_with_deps(
             move |_| {
                 spawn_local(async move {
-                    if file_path.is_empty() {
-                        return;
-                    }
-
                     // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
                     let file_list = invoke(
                         "list_directory",
@@ -73,6 +70,7 @@ pub fn app() -> Html {
         <main class="container">
 
             <div class="row">
+                <input id="file-path" ref={file_path_ref} type="file" webkitdirectory={Some("")} />
                 <input id="greet-input" ref={greet_input_ref} placeholder="Enter a name..." />
                 <button type="button" onclick={greet}>{"Greet"}</button>
             </div>
@@ -80,11 +78,17 @@ pub fn app() -> Html {
             <div class="row">
             <ul>
                 {
-                    files_list.iter().map(|f| {
-                        html!{
-                            <li> { format!("{:?}", f) } </li>
-                        }
-                    }).collect::<Html>()
+                    if files_list.is_empty() {
+                        html!{<p>{ "No files found or could not read dir..." }</p>}
+                    } else {
+                        files_list.iter().map(|f| {
+                            html!{
+                                <li>
+                                    <img src={format!("file://{f}")} width="200" height="200" />
+                                    <br />{ format!("{:?}", f) } </li>
+                            }
+                        }).collect::<Html>()
+                    }
                 }
             </ul>
             </div>
