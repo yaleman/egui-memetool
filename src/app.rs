@@ -3,9 +3,11 @@ use serde_wasm_bindgen::to_value;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
+use yew_router::prelude::*;
 
-use memetool_shared::FileList;
+use memetool_shared::{FileList, ImageData};
 
+const PER_PAGE: u32 = 20;
 
 #[wasm_bindgen]
 extern "C" {
@@ -16,53 +18,120 @@ extern "C" {
     fn log(s: &str);
 }
 
-
 #[derive(Serialize, Deserialize)]
 struct PathArgs<'a> {
-    path: &'a str,
+    pub path: &'a str,
+    pub limit: u32,
+    pub offset: u32,
 }
 
-
+#[derive(Clone, Routable, PartialEq)]
+enum Route {
+    #[at("/")]
+    Home,
+    // #[at("/img/")]
+    // Secure,
+    // #[not_found]
+    // #[at("/404")]
+    // NotFound,
+}
 
 #[function_component(App)]
-pub fn app() -> Html {
+pub fn main_app() -> Html {
     let greet_input_ref = use_node_ref();
-    let file_path_ref = use_node_ref();
 
-
+    #[allow(clippy::redundant_closure)]
     let file_path = use_state(|| String::new());
-    let files_list: UseStateHandle<Vec<String>> = use_state(|| vec![] );
+    #[allow(clippy::redundant_closure)]
+    let files_list: UseStateHandle<Vec<ImageData>> = use_state(|| Vec::new());
 
+    let limit = use_state(|| PER_PAGE);
+    let offset = use_state(|| 0u32);
+    #[allow(clippy::redundant_closure)]
+    let total_files = use_state(|| usize::default());
 
     {
         let files_list = files_list.clone();
 
         let file_path = file_path.clone();
         let file_path2 = file_path.clone();
+
+        let total_files = total_files.clone();
+        let offset = offset.clone();
+        let offset2 = offset.clone();
+
         use_effect_with_deps(
             move |_| {
                 spawn_local(async move {
                     // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
                     let file_list = invoke(
                         "list_directory",
-                        to_value(&PathArgs { path: &*file_path }).unwrap(),
+                        to_value(&PathArgs {
+                            path: &file_path,
+                            limit: *limit,
+                            offset: *offset,
+                        })
+                        .unwrap(),
                     )
                     .await;
+
                     let file_list: FileList = serde_wasm_bindgen::from_value(file_list).unwrap();
-                    files_list.set(file_list.files);
+                    total_files.set(file_list.total_files);
+                    let mut images: Vec<ImageData> = vec![];
+
+                    for filepath in file_list.files.into_iter() {
+                        let image = invoke(
+                            "get_image",
+                            to_value(&PathArgs {
+                                path: &filepath,
+                                limit: *limit,
+                                offset: *offset,
+                            })
+                            .unwrap(),
+                        )
+                        .await;
+                        let image: ImageData = serde_wasm_bindgen::from_value(image).unwrap();
+                        images.push(image);
+                    }
+
+                    files_list.set(images);
                 });
 
                 || {}
             },
-            file_path2,
+            (file_path2, offset2),
         );
     }
 
     let greet = {
-        let file_path = file_path.clone();
+        let file_path = file_path;
         let greet_input_ref = greet_input_ref.clone();
         Callback::from(move |_| {
-            file_path.set(greet_input_ref.cast::<web_sys::HtmlInputElement>().unwrap().value());
+            file_path.set(
+                greet_input_ref
+                    .cast::<web_sys::HtmlInputElement>()
+                    .unwrap()
+                    .value(),
+            );
+        })
+    };
+
+    let scroll_left: Callback<MouseEvent> = {
+        let offset = offset.clone();
+        let new_offset: u32 = if *offset > PER_PAGE {
+            *offset - PER_PAGE
+        } else {
+            PER_PAGE
+        };
+        Callback::from(move |_| {
+            offset.set(new_offset);
+        })
+    };
+    let scroll_right: Callback<MouseEvent> = {
+        let offset = offset.clone();
+        let new_offset = *offset + PER_PAGE;
+        Callback::from(move |_| {
+            offset.set(new_offset);
         })
     };
 
@@ -70,9 +139,15 @@ pub fn app() -> Html {
         <main class="container">
 
             <div class="row">
-                <input id="file-path" ref={file_path_ref} type="file" webkitdirectory={Some("")} />
+                if *offset >= PER_PAGE {
+                    <button onclick={scroll_left}>{"Previous Page"}</button>
+                }
+                // <input id="file-path" ref={file_path_ref} type="file" webkitdirectory={Some("")} />
                 <input id="greet-input" ref={greet_input_ref} placeholder="Enter a name..." />
                 <button type="button" onclick={greet}>{"Greet"}</button>
+                <button>{"Total Files:"} {total_files.to_string()}</button>
+                <button onclick={scroll_right}>{"Next Page"}</button>
+
             </div>
 
             <div class="row">
@@ -83,15 +158,36 @@ pub fn app() -> Html {
                     } else {
                         files_list.iter().map(|f| {
                             html!{
-                                <li>
-                                    <img src={format!("file://{f}")} width="200" height="200" />
-                                    <br />{ format!("{:?}", f) } </li>
+                                <div style="display: inline">
+                                    <img src={f.as_data()} width="200" height="200" />
+                                    // <br />{ format!("{:?}", f) }
+                                </div>
                             }
                         }).collect::<Html>()
                     }
                 }
             </ul>
             </div>
+
         </main>
+    }
+}
+
+fn switch(routes: Route) -> Html {
+    match routes {
+        Route::Home => html! { <h1>{ "Home" }</h1> },
+        // Route::Secure => html! {
+        // <Secure />
+        // },
+        // Route::NotFound => html! { <h1>{ "404" }</h1> },
+    }
+}
+
+#[function_component(Main)]
+fn app() -> Html {
+    html! {
+        <BrowserRouter>
+            <Switch<Route> render={switch} /> // <- must be child of <BrowserRouter>
+        </BrowserRouter>
     }
 }

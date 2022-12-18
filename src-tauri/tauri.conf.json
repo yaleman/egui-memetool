@@ -1,8 +1,7 @@
 {
   "build": {
-    "beforeDevCommand": "trunk serve",
-    "beforeBuildCommand": "trunk build",
-    "devPath": "http://localhost:1420",
+    "beforeDevCommand": "trunk build",
+    "devPath": "../dist",
     "distDir": "../dist",
     "withGlobalTauri": true
   },
