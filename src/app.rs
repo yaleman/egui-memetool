@@ -143,7 +143,7 @@ pub fn main_app() -> Html {
                     <button onclick={scroll_left}>{"Previous Page"}</button>
                 }
                 // <input id="file-path" ref={file_path_ref} type="file" webkitdirectory={Some("")} />
-                <input id="greet-input" ref={greet_input_ref} placeholder="Enter a name..." />
+                <input id="greet-input" ref={greet_input_ref} placeholder="~/Downloads" value={"~/Downloads/"} />
                 <button type="button" onclick={greet}>{"Greet"}</button>
                 <button>{"Total Files:"} {total_files.to_string()}</button>
                 <button onclick={scroll_right}>{"Next Page"}</button>
@@ -159,7 +159,7 @@ pub fn main_app() -> Html {
                         files_list.iter().map(|f| {
                             html!{
                                 <div style="display: inline">
-                                    <img src={f.as_data()} width="200" height="200" />
+                                    <img src={f.as_data()} width="200" height="200" alt={f.filename.as_str().to_owned()} />
                                     // <br />{ format!("{:?}", f) }
                                 </div>
                             }

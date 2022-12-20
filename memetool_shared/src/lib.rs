@@ -28,6 +28,7 @@ impl FileList {
 pub struct ImageData {
     pub content_type: String,
     pub data: String,
+    pub filename: String,
 }
 
 impl ImageData {
@@ -49,6 +50,7 @@ impl ImageData {
         let data = base64::encode(&contents);
 
         Ok(Self {
+            filename: path.to_string(),
             data,
             content_type: content_type.first().unwrap().to_string(),
         })
