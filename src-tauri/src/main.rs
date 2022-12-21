@@ -5,6 +5,7 @@
 
 use memetool_shared::{FileList, ImageData};
 use std::fs;
+use tauri::Manager;
 
 // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
 // #[tauri::command]
@@ -65,6 +66,14 @@ async fn get_image(path: &str) -> Result<ImageData, ()> {
 async fn main() {
     tauri::async_runtime::set(tokio::runtime::Handle::current());
     tauri::Builder::default()
+        .setup(|app| {
+            #[cfg(debug_assertions)]
+            app.get_window("main").unwrap().open_devtools();
+            if let Err(err) = app.get_window("main").unwrap().maximize() {
+                eprintln!("Failed to maximize window: {err:?}");
+            };
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![list_directory, get_image])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

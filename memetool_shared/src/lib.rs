@@ -27,7 +27,6 @@ impl FileList {
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ImageData {
     pub content_type: String,
-    pub data: String,
     pub filename: String,
 }
 
@@ -43,20 +42,12 @@ impl ImageData {
             return Err(format!("Path is not file: {file_path:?}"));
         }
 
-        let contents = std::fs::read(file_path)
-            .map_err(|e| format!("Failed to read file: {e:?}"))
-            .unwrap();
 
-        let data = base64::encode(&contents);
 
         Ok(Self {
             filename: path.to_string(),
-            data,
             content_type: content_type.first().unwrap().to_string(),
         })
     }
-    /// This is what should go into the src attribute for the `img` tag.
-    pub fn as_data(&self) -> String {
-        format!("data:{};base64,{}", self.content_type, self.data)
-    }
+
 }

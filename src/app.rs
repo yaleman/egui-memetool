@@ -14,6 +14,10 @@ extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "tauri"])]
     async fn invoke(cmd: &str, args: JsValue) -> JsValue;
 
+    #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "tauri"])]
+    /// Allows you to refer to a file on the filesystem, returns an `asset://localhost/<filepath>` url as a `JsValue::String.`
+    fn convertFileSrc(filePath: &str, scheme: Option<&str>) -> JsValue;
+
     #[wasm_bindgen(js_namespace = console)]
     fn log(s: &str);
 }
@@ -80,18 +84,21 @@ pub fn main_app() -> Html {
                     let mut images: Vec<ImageData> = vec![];
 
                     for filepath in file_list.files.into_iter() {
-                        let image = invoke(
-                            "get_image",
-                            to_value(&PathArgs {
-                                path: &filepath,
-                                limit: *limit,
-                                offset: *offset,
-                            })
-                            .unwrap(),
-                        )
-                        .await;
-                        let image: ImageData = serde_wasm_bindgen::from_value(image).unwrap();
-                        images.push(image);
+                        let ic = serde_wasm_bindgen::from_value(convertFileSrc(&filepath, None));
+                        if let Ok(ic) = ic {
+                            let content_type = match mime_guess::from_path(&ic).first(){
+                                Some(val) => val.to_string(),
+                                None => String::from("image/jpeg"),
+                            };
+
+                            let img = ImageData {
+                                filename: ic,
+                                content_type,
+                            };
+                            images.push(img);
+                        }
+
+
                     }
 
                     files_list.set(images);
@@ -116,6 +123,13 @@ pub fn main_app() -> Html {
         })
     };
 
+    let scroll_first: Callback<MouseEvent> = {
+        let offset = offset.clone();
+        Callback::from(move |_| {
+            offset.set(PER_PAGE);
+        })
+    };
+
     let scroll_left: Callback<MouseEvent> = {
         let offset = offset.clone();
         let new_offset: u32 = if *offset > PER_PAGE {
@@ -137,9 +151,18 @@ pub fn main_app() -> Html {
 
     html! {
         <main class="container">
-
+            <style type="text/css">
+            {"
+            .img_block {
+                width: 200px;
+                height: 200px;
+                display: inline-block;
+                vertical-align: middle;
+            }"}
+            </style>
             <div class="row">
                 if *offset >= PER_PAGE {
+                    <button onclick={scroll_first}>{"First Page"}</button>
                     <button onclick={scroll_left}>{"Previous Page"}</button>
                 }
                 // <input id="file-path" ref={file_path_ref} type="file" webkitdirectory={Some("")} />
@@ -158,9 +181,8 @@ pub fn main_app() -> Html {
                     } else {
                         files_list.iter().map(|f| {
                             html!{
-                                <div style="display: inline">
-                                    <img src={f.as_data()} width="200" height="200" alt={f.filename.as_str().to_owned()} />
-                                    // <br />{ format!("{:?}", f) }
+                                <div class="img_block">
+                                    <img src={f.filename.clone()} style="max-width: 197px; max-height: 197px;" alt={f.filename.clone()} />
                                 </div>
                             }
                         }).collect::<Html>()
