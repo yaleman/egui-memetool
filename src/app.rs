@@ -3,7 +3,6 @@ use serde_wasm_bindgen::to_value;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
-use yew_router::prelude::*;
 
 use memetool_shared::{FileList, ImageData};
 
@@ -29,28 +28,43 @@ struct PathArgs<'a> {
     pub offset: u32,
 }
 
-#[derive(Clone, Routable, PartialEq)]
-enum Route {
-    #[at("/")]
-    Home,
-    // #[at("/img/")]
-    // Secure,
-    // #[not_found]
-    // #[at("/404")]
-    // NotFound,
+
+#[derive(Clone, Properties, PartialEq)]
+pub struct ImageProps {
+    pub file_path: String,
 }
 
-#[function_component(App)]
-pub fn main_app() -> Html {
-    let greet_input_ref = use_node_ref();
+#[function_component(ImageHandler)]
+pub fn image_handler(props: &ImageProps ) -> Html {
+    html!{ <p>{"Looking at :"} {format!("{}", &props.file_path )} </p>}
+}
+
+pub enum Msg {
+    ImageHandler{ file_path: String },
+    Browser,
+}
+
+
+#[derive(Clone, Properties, PartialEq)]
+pub struct BrowserProps {
+    pub file_path: String,
+    pub offset: u32,
+    pub limit: u32,
+
+}
+
+
+#[function_component(Browser)]
+pub fn browser(props: &BrowserProps) -> Html {
+    let file_path_input_ref = use_node_ref();
 
     #[allow(clippy::redundant_closure)]
-    let file_path = use_state(|| String::new());
+    let file_path = use_state(|| props.file_path.clone());
     #[allow(clippy::redundant_closure)]
     let files_list: UseStateHandle<Vec<ImageData>> = use_state(|| Vec::new());
 
-    let limit = use_state(|| PER_PAGE);
-    let offset = use_state(|| 0u32);
+    let offset = use_state(|| props.offset);
+    let limit = use_state(|| props.limit);
     #[allow(clippy::redundant_closure)]
     let total_files = use_state(|| usize::default());
 
@@ -110,15 +124,14 @@ pub fn main_app() -> Html {
         );
     }
 
-    let greet = {
-        let file_path = file_path;
-        let greet_input_ref = greet_input_ref.clone();
+    let file_path_updater = {
+        let file_path = file_path.clone();
+        let file_path_input_ref = file_path_input_ref.clone();
         Callback::from(move |_| {
-            file_path.set(
-                greet_input_ref
+            file_path.set(file_path_input_ref
                     .cast::<web_sys::HtmlInputElement>()
                     .unwrap()
-                    .value(),
+                    .value()
             );
         })
     };
@@ -126,14 +139,14 @@ pub fn main_app() -> Html {
     let scroll_first: Callback<MouseEvent> = {
         let offset = offset.clone();
         Callback::from(move |_| {
-            offset.set(PER_PAGE);
+            offset.set(0);
         })
     };
 
     let scroll_left: Callback<MouseEvent> = {
         let offset = offset.clone();
-        let new_offset: u32 = if *offset > PER_PAGE {
-            *offset - PER_PAGE
+        let new_offset: u32 = if props.offset > PER_PAGE {
+            props.offset - PER_PAGE
         } else {
             PER_PAGE
         };
@@ -148,6 +161,15 @@ pub fn main_app() -> Html {
             offset.set(new_offset);
         })
     };
+
+    // let select_image: Callback<MouseEvent> = {
+    //     Callback::from(move |event: MouseEvent| {
+    //         log(&format!("got mouse event: {:?}", event));
+    //         if let Some(target) = event.target() {
+    //             log(&format!("target: {:?}", target))
+    //         }
+    //     })
+    // };
 
     html! {
         <main class="container">
@@ -166,8 +188,8 @@ pub fn main_app() -> Html {
                     <button onclick={scroll_left}>{"Previous Page"}</button>
                 }
                 // <input id="file-path" ref={file_path_ref} type="file" webkitdirectory={Some("")} />
-                <input id="greet-input" ref={greet_input_ref} placeholder="~/Downloads" value={"~/Downloads/"} />
-                <button type="button" onclick={greet}>{"Greet"}</button>
+                <input id="greet-input" ref={file_path_input_ref} placeholder="~/Downloads" value={"~/Downloads/"} />
+                <button type="button" onclick={file_path_updater}>{"Greet"}</button>
                 <button>{"Total Files:"} {total_files.to_string()}</button>
                 <button onclick={scroll_right}>{"Next Page"}</button>
 
@@ -182,7 +204,12 @@ pub fn main_app() -> Html {
                         files_list.iter().map(|f| {
                             html!{
                                 <div class="img_block">
-                                    <img src={f.filename.clone()} style="max-width: 197px; max-height: 197px;" alt={f.filename.clone()} />
+                                    <img
+                                        src={f.filename.clone()}
+                                        style="max-width: 197px; max-height: 197px;"
+                                        alt={f.filename.clone()}
+                                        // onclick={ctx.link().callback(|_| Msg::ImageHandler{file_path: f.filename.clone()})}
+                                    />
                                 </div>
                             }
                         }).collect::<Html>()
@@ -195,21 +222,9 @@ pub fn main_app() -> Html {
     }
 }
 
-fn switch(routes: Route) -> Html {
-    match routes {
-        Route::Home => html! { <h1>{ "Home" }</h1> },
-        // Route::Secure => html! {
-        // <Secure />
-        // },
-        // Route::NotFound => html! { <h1>{ "404" }</h1> },
-    }
-}
-
-#[function_component(Main)]
-fn app() -> Html {
-    html! {
-        <BrowserRouter>
-            <Switch<Route> render={switch} /> // <- must be child of <BrowserRouter>
-        </BrowserRouter>
+#[function_component(MainApp)]
+pub fn main() -> Html {
+    html!{
+        <Browser offset=0 limit={PER_PAGE} file_path="~/Downloads" />
     }
 }

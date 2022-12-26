@@ -24,7 +24,7 @@ impl FileList {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ImageData {
     pub content_type: String,
     pub filename: String,
