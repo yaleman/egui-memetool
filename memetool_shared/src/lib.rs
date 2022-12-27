@@ -42,12 +42,9 @@ impl ImageData {
     }
 }
 
-
-
 #[derive(Serialize, Deserialize)]
 pub struct PathArgs<'a> {
     pub path: &'a str,
     pub limit: u32,
     pub offset: u32,
 }
-

@@ -41,7 +41,7 @@ pub enum Msg {
     ScrollRight,
     GotImages { files: FileList },
     // MouseEvent { event: MouseEvent },
-    KeyEvent{ event: KeyboardEvent },
+    KeyEvent { event: KeyboardEvent },
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -70,7 +70,6 @@ pub struct Browser {
     pub total_files: usize,
     pub window_mode: WindowMode,
     pub kbd_listener: Option<EventListener>,
-
 }
 
 // pub fn get_value_from_input_event(e: InputEvent) -> String {
@@ -101,17 +100,16 @@ impl Component for Browser {
             window_mode: WindowMode::Browser,
             kbd_listener: None,
         }
-
     }
 
     fn update(&mut self, ctx: &Context<Self>, msg: Self::Message) -> bool {
         log(&format!("Got message: {msg:?}"));
         match msg {
-            Msg::KeyEvent{ event } => {
+            Msg::KeyEvent { event } => {
                 log(&format!("Got key event! {:?}", event.key()));
                 self.handle_key_event(ctx, event);
                 true
-            },
+            }
             // Msg::MouseEvent { event } => {
             //     log(&format!("Got event: {event:?}"));
             //     log(&format!("Target: {:?}", event.target().unwrap()));
@@ -168,8 +166,7 @@ impl Component for Browser {
                 self.files_list = images;
                 self.total_files = files.total_files;
                 true
-            }
-            // _ => false
+            } // _ => false
         }
     }
 
@@ -189,10 +186,12 @@ impl Component for Browser {
 
         let document = web_sys::window().unwrap().document().unwrap();
         let ct = ctx.link().to_owned();
-        let listener = EventListener::new(&document, "keydown",
-        move |event| {
-            let event = event.dyn_ref::<web_sys::KeyboardEvent>().unwrap_throw().to_owned();
-            ct.send_message(Msg::KeyEvent{ event: event.to_owned() });
+        let listener = EventListener::new(&document, "keydown", move |event| {
+            let event = event
+                .dyn_ref::<web_sys::KeyboardEvent>()
+                .unwrap_throw()
+                .to_owned();
+            ct.send_message(Msg::KeyEvent { event });
         });
 
         self.kbd_listener.replace(listener);
@@ -209,7 +208,7 @@ impl Browser {
     }
 
     fn get_css(&self) -> Html {
-        html!{<style type="text/css">
+        html! {<style type="text/css">
         {"
         .img_block {
             width: 200px;
@@ -308,13 +307,15 @@ impl Browser {
             WindowMode::Browser => {
                 log(&format!(
                     "Key event in browser, no action required. Pressed: {:?}",
-                    key_event.key_code()));
-            },
+                    key_event.key_code()
+                ));
+            }
             WindowMode::ImageHandler { image_data } => {
                 log(&format!(
                     "Key event in ImageHandler({image_data:?}), no action required. Pressed: {:?}",
-                    key_event.as_string()));
-            },
+                    key_event.as_string()
+                ));
+            }
         }
     }
 }
