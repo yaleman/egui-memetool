@@ -1,5 +1,4 @@
 use gloo::events::EventListener;
-
 use serde_wasm_bindgen::to_value;
 use wasm_bindgen::{prelude::*, JsCast};
 use yew::prelude::*;
