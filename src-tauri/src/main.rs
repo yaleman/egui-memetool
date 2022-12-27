@@ -43,6 +43,9 @@ async fn list_directory(path: &str, limit: u32, offset: u32) -> Result<FileList,
         files.push(path.path().to_str().unwrap().to_string());
     }
     let total_files = files.len();
+
+    files.sort();
+
     let files = &files.as_slice()[(offset as usize)..((offset + limit) as usize)];
 
     Ok(FileList {

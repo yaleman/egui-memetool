@@ -18,7 +18,8 @@ impl FileList {
 #[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
 pub struct ImageData {
     pub content_type: String,
-    pub filename: String,
+    pub file_path: String,
+    pub file_url: Option<String>,
 }
 
 impl ImageData {
@@ -34,8 +35,19 @@ impl ImageData {
         }
 
         Ok(Self {
-            filename: path.to_string(),
+            file_path: path.to_string(),
             content_type: content_type.first().unwrap().to_string(),
+            file_url: None,
         })
     }
 }
+
+
+
+#[derive(Serialize, Deserialize)]
+pub struct PathArgs<'a> {
+    pub path: &'a str,
+    pub limit: u32,
+    pub offset: u32,
+}
+
