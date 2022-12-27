@@ -6,7 +6,6 @@ pub struct FileList {
     pub total_files: usize,
 }
 
-
 impl FileList {
     pub fn empty() -> Self {
         Self {
@@ -34,12 +33,9 @@ impl ImageData {
             return Err(format!("Path is not file: {file_path:?}"));
         }
 
-
-
         Ok(Self {
             filename: path.to_string(),
             content_type: content_type.first().unwrap().to_string(),
         })
     }
-
 }

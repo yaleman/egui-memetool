@@ -5,7 +5,7 @@
 
 use memetool_shared::{FileList, ImageData};
 use std::fs;
-use tauri::{Manager, Icon};
+use tauri::Manager;
 
 // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
 #[tauri::command]
@@ -60,7 +60,6 @@ async fn get_image(path: &str) -> Result<ImageData, ()> {
 #[tokio::main]
 async fn main() {
     tauri::async_runtime::set(tokio::runtime::Handle::current());
-
 
     // let icon_path = std::path::PathBuf::from("icons/apple-touch-icon-base.png");
 

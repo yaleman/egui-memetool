@@ -28,38 +28,35 @@ struct PathArgs<'a> {
     pub offset: u32,
 }
 
-
-#[derive(Clone, Properties, PartialEq)]
+#[derive(Clone, Properties, Eq, PartialEq)]
 pub struct ImageProps {
     pub file_path: String,
 }
 
 #[function_component(ImageHandler)]
-pub fn image_handler(props: &ImageProps ) -> Html {
-    html!{ <p>{"Looking at :"} {format!("{}", &props.file_path )} </p>}
+pub fn image_handler(props: &ImageProps) -> Html {
+    html! { <p>{"Looking at :"} {format!("{}", &props.file_path )} </p>}
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Msg {
-    ImageHandler{ file_path: String },
+    ImageHandler { file_path: String },
     Browser,
     ScrollFirst,
     ScrollLeft,
     ScrollRight,
-    GotImages{ files: FileList },
+    GotImages { files: FileList },
     Event { event: MouseEvent },
     KeyEvent { event: KeyboardEvent },
 }
 
-
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum WindowMode {
     Browser,
-    ImageHandler{ file_path: String },
+    ImageHandler { file_path: String },
 }
 
-
-#[derive(Clone, Properties, PartialEq)]
+#[derive(Clone, Properties, Eq, PartialEq)]
 pub struct BrowserProps {
     #[prop_or("~/Downloads/".to_string())]
     pub file_path: String,
@@ -71,15 +68,14 @@ pub struct BrowserProps {
     pub files_list: Vec<ImageData>,
 }
 
-pub struct Browser{
+pub struct Browser {
     pub file_path: String,
     pub offset: u32,
     pub limit: u32,
     pub files_list: Vec<ImageData>,
     pub total_files: usize,
-    pub window_mode:  WindowMode,
+    pub window_mode: WindowMode,
 }
-
 
 // pub fn get_value_from_input_event(e: InputEvent) -> String {
 //     let event: Event = e.dyn_into().unwrap_throw();
@@ -93,22 +89,24 @@ impl Component for Browser {
     type Properties = BrowserProps;
 
     fn create(ctx: &Context<Self>) -> Self {
-
         let file_path = ctx.props().file_path.clone();
-        ctx.link().send_future(update_file_list(file_path, ctx.props().offset, ctx.props().limit));
+        ctx.link().send_future(update_file_list(
+            file_path,
+            ctx.props().offset,
+            ctx.props().limit,
+        ));
 
         Browser {
             offset: ctx.props().offset,
             limit: ctx.props().limit,
             file_path: ctx.props().file_path.clone(),
-            files_list:  vec![],
+            files_list: vec![],
             total_files: 0,
             window_mode: WindowMode::Browser,
         }
     }
 
     fn update(&mut self, ctx: &Context<Self>, msg: Self::Message) -> bool {
-
         log(&format!("Got message: {msg:?}"));
         match msg {
             Msg::KeyEvent { event } => {
@@ -122,12 +120,12 @@ impl Component for Browser {
             Msg::Browser => {
                 self.window_mode = WindowMode::Browser;
                 true
-            },
-            Msg::ImageHandler { file_path }  => {
+            }
+            Msg::ImageHandler { file_path } => {
                 log(&format!("Got image: {:?}", file_path));
                 self.window_mode = WindowMode::ImageHandler { file_path };
                 true
-            },
+            }
             Msg::ScrollLeft => {
                 if self.offset >= PER_PAGE {
                     self.offset -= PER_PAGE;
@@ -136,24 +134,24 @@ impl Component for Browser {
                 }
                 self.get_new_files(ctx);
                 true
-            },
+            }
             Msg::ScrollRight => {
                 self.offset += PER_PAGE;
                 self.get_new_files(ctx);
                 true
-            },
+            }
             Msg::ScrollFirst => {
                 self.offset = 0;
                 self.get_new_files(ctx);
                 true
-            },
-            Msg::GotImages{ files } => {
+            }
+            Msg::GotImages { files } => {
                 let mut images: Vec<ImageData> = vec![];
 
                 for filepath in files.files.into_iter() {
                     let ic = serde_wasm_bindgen::from_value(convertFileSrc(&filepath, None));
                     if let Ok(ic) = ic {
-                        let content_type = match mime_guess::from_path(&ic).first(){
+                        let content_type = match mime_guess::from_path(&ic).first() {
                             Some(val) => val.to_string(),
                             None => String::from("image/jpeg"),
                         };
@@ -168,7 +166,7 @@ impl Component for Browser {
                 self.files_list = images;
                 self.total_files = files.total_files;
                 true
-            },
+            }
             // _ => false
         }
     }
@@ -177,16 +175,19 @@ impl Component for Browser {
         log("View...");
 
         match self.window_mode.clone() {
-            WindowMode::Browser => self.browser_view(&ctx),
-            WindowMode::ImageHandler { file_path } => self.imagehandler_view(&ctx, file_path),
+            WindowMode::Browser => self.browser_view(ctx),
+            WindowMode::ImageHandler { file_path } => self.imagehandler_view(ctx, file_path),
         }
-
     }
 }
 
 impl Browser {
     fn get_new_files(&self, ctx: &Context<Self>) {
-        ctx.link().send_future(update_file_list(self.file_path.clone(), self.offset, self.limit));
+        ctx.link().send_future(update_file_list(
+            self.file_path.clone(),
+            self.offset,
+            self.limit,
+        ));
     }
 
     fn browser_view(&self, ctx: &Context<Self>) -> Html {
@@ -252,21 +253,19 @@ impl Browser {
     }
 
     fn imagehandler_view(&self, ctx: &Context<Self>, file_path: String) -> Html {
-
         let button = NodeRef::default();
 
-        yew_hooks::use_event(button.clone(), "click", move |_: MouseEvent| {
+        yew_hooks::use_event(button, "click", move |_: MouseEvent| {
             log("Clicked!");
         });
 
         let link = ctx.link().clone();
         yew_hooks::use_event_with_window("onkeyup", move |e: KeyboardEvent| {
-            link.callback(move |event| Msg::KeyEvent{event});
-            log(&format!("{} is pressed!", e.key()).as_str());
+            link.callback(move |event| Msg::KeyEvent { event });
+            log(format!("{} is pressed!", e.key()).as_str());
         });
 
-
-        html!{
+        html! {
             <div>
                 <button onclick={ctx.link().callback(move |_| Msg::Browser)}>{"Back"}</button>
                 <button onclick={ctx.link().callback(move |event| Msg::Event{event})}>{"Test"}</button>
@@ -278,13 +277,12 @@ impl Browser {
 
 #[function_component(MainApp)]
 pub fn main() -> Html {
-    html!{
+    html! {
         <Browser />
     }
 }
 
-
-async fn update_file_list(path: String, offset: u32, limit:u32) -> Msg {
+async fn update_file_list(path: String, offset: u32, limit: u32) -> Msg {
     log("Grabbing files...");
     let file_list = invoke(
         "list_directory",
