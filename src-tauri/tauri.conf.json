@@ -20,6 +20,9 @@
         "readFile" : true,
         "readDir" : true
       },
+      "globalShortcut": {
+        "all": false
+      },
       "protocol": {
         "all": false,
         "asset": true,
@@ -37,11 +40,9 @@
       },
       "externalBin": [],
       "icon": [
-        "icons/32x32.png",
-        "icons/128x128.png",
-        "icons/128x128@2x.png",
-        "icons/icon.icns",
-        "icons/icon.ico"
+        "icons/app-icon.icns",
+        "icons/app-icon.ico",
+        "icons/apple-touch-icon-base.png"
       ],
       "identifier": "com.terminaloutcomes.memetool",
       "longDescription": "Memetool allows you to mess with your memes.",

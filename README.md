@@ -12,4 +12,7 @@ cargo install cargo-tauri
 cargo tauri dev
 ```
 
-Blep.
+
+## Thanks
+
+- [Image2Icon](http://img2icnsapp.com) for icon conversion tool (from SetApp, woo!)

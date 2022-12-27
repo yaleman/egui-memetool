@@ -5,7 +5,7 @@
 
 use memetool_shared::{FileList, ImageData};
 use std::fs;
-use tauri::Manager;
+use tauri::{Manager, Icon};
 
 // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
 #[tauri::command]
@@ -60,10 +60,20 @@ async fn get_image(path: &str) -> Result<ImageData, ()> {
 #[tokio::main]
 async fn main() {
     tauri::async_runtime::set(tokio::runtime::Handle::current());
+
+
+    // let icon_path = std::path::PathBuf::from("icons/apple-touch-icon-base.png");
+
+    // let icon = Icon::File(icon_path);
+
     tauri::Builder::default()
         .setup(|app| {
             #[cfg(debug_assertions)]
             app.get_window("main").unwrap().open_devtools();
+            // if let Err(err) = app.get_window("main").unwrap().set_icon(icon) {
+            //     eprintln!("Failed to set icon: {err:?}");
+            // };
+
             if let Err(err) = app.get_window("main").unwrap().maximize() {
                 eprintln!("Failed to maximize window: {err:?}");
             };

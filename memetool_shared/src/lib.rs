@@ -1,19 +1,11 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct FileList {
     pub files: Vec<String>,
     pub total_files: usize,
 }
 
-// impl From<Vec<String>> for FileList {
-//     fn from(input: Vec<String>) -> Self {
-//         FileList {
-//             total_files: input.len(),
-//             files: input,
-//         }
-//     }
-// }
 
 impl FileList {
     pub fn empty() -> Self {
@@ -24,7 +16,7 @@ impl FileList {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
 pub struct ImageData {
     pub content_type: String,
     pub filename: String,
