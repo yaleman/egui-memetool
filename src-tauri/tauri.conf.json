@@ -66,7 +66,8 @@
       "csp": "default-src 'self'; img-src 'self' asset: https://asset.localhost"
     },
     "updater": {
-      "active": false
+      "active": false,
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDkwQzEwQUQzMDBEQkQ4NjEKUldSaDJOc0Ewd3JCa0lDQVpxTThRd3FQb0l4amllQzJVQkl1aUtKRXRibU13TFMrTXRlZXQrTFgK"
     },
     "windows": [
       {

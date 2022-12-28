@@ -18,7 +18,7 @@ serde = { workspace=true, features = ["derive"] }
 serde_json = { workspace=true }
 memetool_shared = { workspace = true }
 shellexpand = { workspace = true }
-tauri = { workspace = true , features = ["fs-read-dir", "fs-read-file", "protocol-asset", "shell-open"] }
+tauri = { workspace = true , features = ["fs-read-dir", "fs-read-file", "protocol-asset", "shell-open", "updater"] }
 
 tokio = { version = "1.23.0", features = ["full"] }
 
