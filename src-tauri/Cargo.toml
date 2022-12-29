@@ -14,12 +14,12 @@ rust-version = "1.65"
 tauri-build = { version = "1.2", features = [] }
 
 [dependencies]
+image = { workspace = true}
+memetool_shared = { workspace = true }
 serde = { workspace=true, features = ["derive"] }
 serde_json = { workspace=true }
-memetool_shared = { workspace = true }
 shellexpand = { workspace = true }
-tauri = { workspace = true , features = ["fs-read-dir", "fs-read-file", "protocol-asset", "shell-open", "updater"] }
-
+tauri = { workspace = true , features = ["fs-read-dir", "fs-read-file", "protocol-asset", "shell-open"] }
 tokio = { version = "1.23.0", features = ["full"] }
 
 [features]

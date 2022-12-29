@@ -21,6 +21,7 @@ gloo = "0.8.0"
 
 [workspace.dependencies]
 base64 = "0.20.0"
+image = "0.24.5"
 js-sys = "0.3.59"
 memetool_shared = { path = "./memetool_shared" }
 mime_guess = "2.0.4"

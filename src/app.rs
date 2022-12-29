@@ -1,9 +1,10 @@
 use gloo::events::EventListener;
+use serde::{Serialize, Deserialize};
 use serde_wasm_bindgen::to_value;
 use wasm_bindgen::{prelude::*, JsCast};
 use yew::prelude::*;
 
-use memetool_shared::{FileList, ImageData, PathArgs};
+use memetool_shared::{FileList, ImageAction, ImageData, ImagePassed, PathArgs, RESIZE_DEFAULTS};
 
 const PER_PAGE: u32 = 20;
 
@@ -26,6 +27,8 @@ pub struct ImageProps {
     pub file_path: String,
 }
 
+
+
 #[function_component(ImageHandler)]
 pub fn image_handler(props: &ImageProps) -> Html {
     html! { <p>{"Looking at :"} {format!("{}", &props.file_path )} </p>}
@@ -33,7 +36,9 @@ pub fn image_handler(props: &ImageProps) -> Html {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Msg {
+    ImageLoad { image_data: ImagePassed },
     ImageHandler { image_data: ImageData },
+    ImageAction { image_data: ImageData, action: ImageAction },
     Browser,
     ScrollFirst,
     ScrollLeft,
@@ -41,6 +46,7 @@ pub enum Msg {
     GotImages { files: FileList },
     // MouseEvent { event: MouseEvent },
     KeyEvent { event: KeyboardEvent },
+    Error { error: String },
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -68,6 +74,7 @@ pub struct Browser {
     pub files_list: Vec<ImageData>,
     pub total_files: usize,
     pub window_mode: WindowMode,
+    /// Holds the keyboard event listener when the renderer's started.
     pub kbd_listener: Option<EventListener>,
 }
 
@@ -104,8 +111,12 @@ impl Component for Browser {
     fn update(&mut self, ctx: &Context<Self>, msg: Self::Message) -> bool {
         log(&format!("Got message: {msg:?}"));
         match msg {
+            Msg::Error { error } => {
+                log(&error);
+                false
+            },
             Msg::KeyEvent { event } => {
-                log(&format!("Got key event! {:?}", event.key()));
+                // log(&format!("Got key event! {:?}", event.key()));
                 self.handle_key_event(ctx, event);
                 true
             }
@@ -119,8 +130,16 @@ impl Component for Browser {
                 self.window_mode = WindowMode::Browser;
                 true
             }
+            Msg::ImageAction { image_data: _, action } => {
+                log(&format!("Action: {action:?}"));
+                false
+            }
+            Msg::ImageLoad { image_data } => {
+                ctx.link().send_future(load_image_for_imageviewer(image_data));
+                false
+            }
             Msg::ImageHandler { image_data } => {
-                log(&format!("Got image: {:?}", image_data));
+                // log(&format!("Got image: {:?}", image_data));
                 self.window_mode = WindowMode::ImageHandler { image_data };
                 true
             }
@@ -158,6 +177,7 @@ impl Component for Browser {
                             file_path: filepath,
                             file_url: Some(file_url),
                             content_type,
+                            ..ImageData::default()
                         };
                         images.push(img);
                     }
@@ -170,8 +190,6 @@ impl Component for Browser {
     }
 
     fn view(&self, ctx: &Context<Self>) -> Html {
-        log("View...");
-
         match self.window_mode.clone() {
             WindowMode::Browser => self.browser_view(ctx),
             WindowMode::ImageHandler { image_data } => self.imagehandler_view(ctx, image_data),
@@ -246,6 +264,11 @@ impl Browser {
                             html!{<p>{ "No files found or could not read dir..." }</p>}
                         } else {
                             self.files_list.clone().into_iter().map(|f| {
+                                let image_data = ImagePassed {
+                                    path: f.file_path.clone(),
+                                    file_url: f.file_url.clone().unwrap(),
+                                    image_format: f.file_type,
+                                };
                                 html!{
                                     <div class="img_block">
                                         <img
@@ -253,9 +276,9 @@ impl Browser {
                                             style="max-width: 197px; max-height: 197px;"
                                             alt={f.file_path.clone()}
                                             onclick={ctx.link().callback(move |_| {
-                                                Msg::ImageHandler{image_data: f.clone() }
-                                            }
-                                            )}
+                                                Msg::ImageLoad { image_data: image_data.to_owned() }
+                                            })}
+
                                         />
                                     </div>
                                 }
@@ -269,6 +292,17 @@ impl Browser {
     }
 
     fn imagehandler_view(&self, ctx: &Context<Self>, image_data: ImageData) -> Html {
+
+        // log(&format!("Image_info: {image_info:?}"));
+
+        let dimension_data = match image_data.file_dimensions {
+            Some(val) => {
+                let (x,y) = val;
+                html!{<p>{"Original image dimensions: "}{x}{"x"}{y}</p>}
+            },
+            None => html!{<></>}
+        };
+
         html! {
             <>
 
@@ -279,6 +313,7 @@ impl Browser {
             </div>
             <div class="row">
                 <div class="col">
+                {dimension_data}
 
                 </div>
             </div>
@@ -301,7 +336,7 @@ impl Browser {
         }
     }
 
-    fn handle_key_event(&self, _ctx: &Context<Self>, key_event: KeyboardEvent) {
+    fn handle_key_event(&self, ctx: &Context<Self>, key_event: KeyboardEvent) {
         match &self.window_mode {
             WindowMode::Browser => {
                 log(&format!(
@@ -310,10 +345,27 @@ impl Browser {
                 ));
             }
             WindowMode::ImageHandler { image_data } => {
-                log(&format!(
-                    "Key event in ImageHandler({image_data:?}), no action required. Pressed: {:?}",
-                    key_event.as_string()
-                ));
+                let image_data = image_data.to_owned();
+                match key_event.key().as_str() {
+                    "r" => {
+                        log("r!");
+                        ctx.link().send_message(Msg::ImageAction {image_data, action: ImageAction::Rename { new_path: "herpaderpa".to_string() } })
+                    },
+                    "s" => {
+                        log("reSizing!");
+                        ctx.link().send_message(Msg::ImageAction {
+                            image_data,
+                            action: ImageAction::Resize{ x: RESIZE_DEFAULTS.0, y: RESIZE_DEFAULTS.0 },
+                        })
+                    },
+                    "S" => {
+                        log("we should pop a thing prompting for a size here...");
+                    }
+                    _ => log(&format!(
+                        "Key event in ImageHandler({image_data:?}), no action required. Pressed: {:?}",
+                        key_event.key()
+                    ))
+                }
             }
         }
     }
@@ -324,6 +376,24 @@ pub fn main() -> Html {
     html! {
         <Browser />
     }
+}
+
+async fn load_image_for_imageviewer(image_data: ImagePassed) -> Msg {
+
+    #[derive(Serialize,Deserialize)]
+    struct PassIt {
+        imagedata: ImagePassed,
+    }
+
+    let image_response = invoke(
+        "get_image",
+        to_value(&PassIt{ imagedata: image_data.clone() }).unwrap()
+    ).await;
+    let image_data: ImageData = match serde_wasm_bindgen::from_value(image_response) {
+        Ok(val) => val,
+        Err(err) => return Msg::Error{error: format!("Failed to get image data for {}: {err:?}", image_data.path)}
+    };
+    Msg::ImageHandler { image_data }
 }
 
 async fn update_file_list(path: String, offset: u32, limit: u32) -> Msg {

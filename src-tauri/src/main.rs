@@ -3,7 +3,7 @@
     windows_subsystem = "windows"
 )]
 
-use memetool_shared::{FileList, ImageData};
+use memetool_shared::{FileList, ImagePassed, ImageData};
 use std::fs;
 use tauri::Manager;
 
@@ -55,9 +55,14 @@ async fn list_directory(path: &str, limit: u32, offset: u32) -> Result<FileList,
 }
 
 #[tauri::command]
-async fn get_image(path: &str) -> Result<ImageData, ()> {
-    // data:image/png;base64
-    ImageData::try_from_filepath(path).await.map_err(|_| ())
+async fn get_image( imagedata: ImagePassed) -> Result<ImageData, ()> {
+    // println!("get_image: {imagedata:?}");
+    ImageData::try_from_imagepassed(imagedata).await.map_err(|e|
+        {
+            eprintln!("Error: {e:?}");
+        ()
+    }
+    )
 }
 
 #[tokio::main]
