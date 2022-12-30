@@ -53,8 +53,9 @@
         "providerShortName": null,
         "signingIdentity": null
       },
-      "resources": [],
-      "shortDescription": "",
+      "resources": [
+      ],
+      "shortDescription": "Meme image management.",
       "targets": "all",
       "windows": {
         "certificateThumbprint": null,
@@ -63,7 +64,7 @@
       }
     },
     "security": {
-      "csp": "default-src 'self'; img-src 'self' asset: https://asset.localhost"
+      "csp": "default-src 'self'; img-src 'self' asset: https://asset.localhost; script-src: 'unsafe-eval'"
     },
     "windows": [
       {
