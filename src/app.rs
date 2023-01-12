@@ -302,7 +302,9 @@ impl Browser {
             },
             None => html!{<></>}
         };
-
+        let filename_data = html!{
+            <p>{"Filename: "}{image_data.file_path.clone()}</p>
+        };
         html! {
             <>
 
@@ -311,15 +313,8 @@ impl Browser {
                 <button autofocus=true onclick={ctx.link().callback(move |_| Msg::Browser)}>{"Back"}</button>
                 // <button onclick={ctx.link().callback(move |event| Msg::MouseEvent{event})}>{"Test"}</button>
             </div>
-            <div class="row">
-                <div class="col">
-                {dimension_data}
-
-                </div>
-            </div>
             // TODO: add image data, file size, width/height etc.
             <div class="row">
-                // <div clas>{file_path.clone()}</div>
                 <div class="col">
                     <img
                     src={image_data.file_url.clone()}
@@ -331,7 +326,12 @@ impl Browser {
                     // )}
                 />
                 </div>
+                <div class="col">
+                    {dimension_data}
+                    {filename_data}
+                </div>
             </div>
+
             </>
         }
     }
