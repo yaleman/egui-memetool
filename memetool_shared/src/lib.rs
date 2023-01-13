@@ -1,12 +1,10 @@
-
-
 use std::fs::File;
 use std::io::BufReader;
 
 use image::io::Reader as ImageReader;
 use serde::{Deserialize, Serialize};
 
-pub const RESIZE_DEFAULTS: (u32, u32) = (800,800);
+pub const RESIZE_DEFAULTS: (u32, u32) = (800, 800);
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct FileList {
@@ -22,7 +20,6 @@ impl FileList {
         }
     }
 }
-
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum ImageFormat {
@@ -62,7 +59,6 @@ impl From<ImageFormat> for image::ImageFormat {
             ImageFormat::Avif => image::ImageFormat::Avif,
             ImageFormat::Unknown => panic!("This shouldn't be done!"),
         }
-
     }
 }
 impl From<image::ImageFormat> for ImageFormat {
@@ -84,7 +80,6 @@ impl From<image::ImageFormat> for ImageFormat {
             image::ImageFormat::Avif => ImageFormat::Avif,
             _ => ImageFormat::Unknown,
         }
-
     }
 }
 
@@ -100,12 +95,16 @@ pub struct ImageData {
 
 impl ImageData {
     fn load_image(path: &str) -> Result<ImageReader<BufReader<File>>, String> {
-    match ImageReader::open(path) {
-        Ok(val) => match val.with_guessed_format() {
-            Ok(val) => Ok(val),
-            Err(err) => return Err(format!("Failed to identify format of image {path}: {err:?}")),
-        },
-        Err(err) => return Err(format!("Failed to read image from {path}: {err:?}")),
+        match ImageReader::open(path) {
+            Ok(val) => match val.with_guessed_format() {
+                Ok(val) => Ok(val),
+                Err(err) => {
+                    return Err(format!(
+                        "Failed to identify format of image {path}: {err:?}"
+                    ))
+                }
+            },
+            Err(err) => return Err(format!("Failed to read image from {path}: {err:?}")),
         }
     }
 
@@ -122,7 +121,10 @@ impl ImageData {
             return Err(format!("Path is not file: {file_path:?}"));
         }
 
-        let file_metadata = file_path.metadata().map_err(|e| format!("Failed to get file metadata for {file_path:?}: {e:?}")).unwrap();
+        let file_metadata = file_path
+            .metadata()
+            .map_err(|e| format!("Failed to get file metadata for {file_path:?}: {e:?}"))
+            .unwrap();
 
         if !file_metadata.is_file() {
             return Err(format!("File path {path} is not file!"));
@@ -132,17 +134,17 @@ impl ImageData {
             Ok(val) => val,
             Err(err) => {
                 eprintln!("Failed to read dimensions of {path}: {err:?}");
-                (0,0)
+                (0, 0)
             }
         };
 
         let res = Self {
-            file_path: path.to_string(),
+            file_path: path,
             content_type: content_type.first().unwrap().to_string(),
             file_size: Some(file_metadata.len()),
             file_dimensions: Some(file_dimensions),
             file_url: Some(image_data.file_url.to_string()),
-            file_type: image_data.image_format.to_owned(),
+            file_type: image_data.image_format,
         };
         // eprintln!("image load result {res:?}");
         Ok(res)
@@ -156,10 +158,31 @@ pub struct PathArgs<'a> {
     pub offset: u32,
 }
 
+impl From<&ImageData> for ImagePassed {
+    fn from(input: &ImageData) -> ImagePassed {
+        ImagePassed {
+            path: input.file_path.clone(),
+            file_url: input.file_url.clone().unwrap(),
+            image_format: None,
+        }
+    }
+}
 
+impl From<ImagePassed> for ImageData {
+    fn from(input: ImagePassed) -> ImageData {
+        ImageData {
+            content_type: "".to_string(),
+            file_path: input.path,
+            file_size: None,
+            file_dimensions: None,
+            file_type: None,
+            file_url: None,
+        }
+    }
+}
 
 #[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
-pub struct ImagePassed{
+pub struct ImagePassed {
     pub path: String,
     pub file_url: String,
     pub image_format: Option<ImageFormat>,
@@ -167,6 +190,7 @@ pub struct ImagePassed{
 
 #[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq)]
 pub enum ImageAction {
-    Resize{ x: u32, y: u32},
+    Delete,
+    Resize { x: u32, y: u32 },
     Rename { new_path: String },
 }

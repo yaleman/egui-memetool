@@ -19,7 +19,7 @@ memetool_shared = { workspace = true }
 serde = { workspace=true, features = ["derive"] }
 serde_json = { workspace=true }
 shellexpand = { workspace = true }
-tauri = { workspace = true , features = ["fs-read-dir", "fs-read-file", "protocol-asset", "shell-open"] }
+tauri = { workspace = true , features = ["dialog-confirm", "fs-read-dir", "fs-read-file", "fs-remove-file", "protocol-asset", "shell-open"] }
 tokio = { version = "1.23.0", features = ["full"] }
 
 [features]

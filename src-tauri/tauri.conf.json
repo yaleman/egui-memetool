@@ -12,13 +12,16 @@
   "tauri": {
     "allowlist": {
       "all": false,
-      "shell": {
-        "all": false,
-        "open": true
+      "dialog" : {
+        "confirm" : true
       },
       "fs" : {
         "readFile" : true,
-        "readDir" : true
+        "readDir" : true,
+        "removeFile": true,
+        "scope" : [
+          "*"
+        ]
       },
       "globalShortcut": {
         "all": false
@@ -29,8 +32,13 @@
         "assetScope": [
           "**"
         ]
+      },
+      "shell": {
+        "all": false,
+        "open": true
       }
     },
+
     "bundle": {
       "active": true,
       "category": "DeveloperTool",

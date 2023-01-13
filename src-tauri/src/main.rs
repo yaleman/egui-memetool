@@ -3,9 +3,10 @@
     windows_subsystem = "windows"
 )]
 
-use memetool_shared::{FileList, ImagePassed, ImageData};
+use memetool_shared::{FileList, ImageData, ImagePassed};
 use std::fs;
-use tauri::Manager;
+use tauri::api::dialog::blocking::confirm;
+use tauri::{Manager, Window};
 
 // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
 #[tauri::command]
@@ -55,14 +56,32 @@ async fn list_directory(path: &str, limit: u32, offset: u32) -> Result<FileList,
 }
 
 #[tauri::command]
-async fn get_image( imagedata: ImagePassed) -> Result<ImageData, ()> {
+async fn get_image(imagedata: ImagePassed) -> Result<ImageData, ()> {
     // println!("get_image: {imagedata:?}");
-    ImageData::try_from_imagepassed(imagedata).await.map_err(|e|
-        {
+    ImageData::try_from_imagepassed(imagedata)
+        .await
+        .map_err(|e| {
             eprintln!("Error: {e:?}");
-        ()
+        })
+}
+
+#[tauri::command]
+async fn delete_image(window: Window, imagedata: ImagePassed) -> Result<bool, ()> {
+    let result = confirm(
+        Some(&window),
+        "File Deletion",
+        format!("Delete {}?", imagedata.path,),
+    );
+    match result {
+        true => {
+            eprintln!("yes");
+            Ok(true)
+        }
+        false => {
+            eprintln!("no!");
+            Ok(false)
+        }
     }
-    )
 }
 
 #[tokio::main]
@@ -77,16 +96,17 @@ async fn main() {
         .setup(|app| {
             #[cfg(debug_assertions)]
             app.get_window("main").unwrap().open_devtools();
-            // if let Err(err) = app.get_window("main").unwrap().set_icon(icon) {
-            //     eprintln!("Failed to set icon: {err:?}");
-            // };
 
             if let Err(err) = app.get_window("main").unwrap().maximize() {
                 eprintln!("Failed to maximize window: {err:?}");
             };
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![list_directory, get_image])
+        .invoke_handler(tauri::generate_handler![
+            delete_image,
+            get_image,
+            list_directory,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

@@ -1,5 +1,5 @@
 use gloo::events::EventListener;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use serde_wasm_bindgen::to_value;
 use wasm_bindgen::{prelude::*, JsCast};
 use yew::prelude::*;
@@ -17,6 +17,10 @@ extern "C" {
     /// Allows you to refer to a file on the filesystem, returns an `asset://localhost/<filepath>` url as a `JsValue::String.`
     fn convertFileSrc(filePath: &str, scheme: Option<&str>) -> JsValue;
 
+    #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "fs"])]
+    /// Allows you to refer to a file on the filesystem, returns an `asset://localhost/<filepath>` url as a `JsValue::String.`
+    fn removeFile(file: &str, args: Option<&str>) -> JsValue;
+
     #[wasm_bindgen(js_namespace = console)]
     fn log(s: &str);
 
@@ -27,8 +31,6 @@ pub struct ImageProps {
     pub file_path: String,
 }
 
-
-
 #[function_component(ImageHandler)]
 pub fn image_handler(props: &ImageProps) -> Html {
     html! { <p>{"Looking at :"} {format!("{}", &props.file_path )} </p>}
@@ -36,17 +38,31 @@ pub fn image_handler(props: &ImageProps) -> Html {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Msg {
-    ImageLoad { image_data: ImagePassed },
-    ImageHandler { image_data: ImageData },
-    ImageAction { image_data: ImageData, action: ImageAction },
+    ImageLoad {
+        image_data: ImagePassed,
+    },
+    ImageHandler {
+        image_data: ImageData,
+    },
+    ImageAction {
+        image_data: ImageData,
+        action: ImageAction,
+    },
     Browser,
+    BrowserReload,
     ScrollFirst,
     ScrollLeft,
     ScrollRight,
-    GotImages { files: FileList },
+    GotImages {
+        files: FileList,
+    },
     // MouseEvent { event: MouseEvent },
-    KeyEvent { event: KeyboardEvent },
-    Error { error: String },
+    KeyEvent {
+        event: KeyboardEvent,
+    },
+    Error {
+        error: String,
+    },
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -114,7 +130,7 @@ impl Component for Browser {
             Msg::Error { error } => {
                 log(&error);
                 false
-            },
+            }
             Msg::KeyEvent { event } => {
                 // log(&format!("Got key event! {:?}", event.key()));
                 self.handle_key_event(ctx, event);
@@ -130,12 +146,21 @@ impl Component for Browser {
                 self.window_mode = WindowMode::Browser;
                 true
             }
-            Msg::ImageAction { image_data: _, action } => {
+            Msg::BrowserReload => {
+                self.get_new_files(ctx);
+                self.window_mode = WindowMode::Browser;
+                true
+            }
+            Msg::ImageAction {
+                image_data: _,
+                action,
+            } => {
                 log(&format!("Action: {action:?}"));
                 false
             }
             Msg::ImageLoad { image_data } => {
-                ctx.link().send_future(load_image_for_imageviewer(image_data));
+                ctx.link()
+                    .send_future(load_image_for_imageviewer(image_data));
                 false
             }
             Msg::ImageHandler { image_data } => {
@@ -224,7 +249,6 @@ impl Browser {
         ));
     }
 
-
     fn browser_view(&self, ctx: &Context<Self>) -> Html {
         html! {
             <>
@@ -280,17 +304,16 @@ impl Browser {
     }
 
     fn imagehandler_view(&self, ctx: &Context<Self>, image_data: ImageData) -> Html {
-
         // log(&format!("Image_info: {image_info:?}"));
 
         let dimension_data = match image_data.file_dimensions {
             Some(val) => {
-                let (x,y) = val;
-                html!{<p>{"Original image dimensions: "}{x}{"x"}{y}</p>}
-            },
-            None => html!{<></>}
+                let (x, y) = val;
+                html! {<p>{"Original image dimensions: "}{x}{"x"}{y}</p>}
+            }
+            None => html! {<></>},
         };
-        let filename_data = html!{
+        let filename_data = html! {
             <p>{"Filename: "}{image_data.file_path.clone()}</p>
         };
         html! {
@@ -324,15 +347,29 @@ impl Browser {
 
     fn handle_key_event(&self, ctx: &Context<Self>, key_event: KeyboardEvent) {
         match &self.window_mode {
-            WindowMode::Browser => {
-                log(&format!(
-                    "Key event in browser, no action required. Pressed: {:?}",
-                    key_event.key_code()
-                ));
-            }
+            WindowMode::Browser => match key_event.key().as_str() {
+                "PageUp" => ctx.link().send_message(Msg::ScrollLeft),
+                "PageDown" => ctx.link().send_message(Msg::ScrollRight),
+                "Home" => ctx.link().send_message(Msg::ScrollFirst),
+                _ => {
+                    log(&format!(
+                        "Key event in browser, no action required. Pressed: {:?})",
+                        key_event.key(),
+                    ));
+                }
+            },
             WindowMode::ImageHandler { image_data } => {
                 let image_data = image_data.to_owned();
                 match key_event.key().as_str() {
+                    "Escape" => {
+                        ctx.link().send_message(Msg::Browser);
+                    }
+                    "d" => {
+                        log("delete image time!");
+                        ctx.link().send_future(
+                            delete_image(image_data)
+                        );
+                    },
                     "r" => {
                         log("r!");
                         ctx.link().send_message(Msg::ImageAction {image_data, action: ImageAction::Rename { new_path: "herpaderpa".to_string() } })
@@ -364,20 +401,53 @@ pub fn main() -> Html {
     }
 }
 
-async fn load_image_for_imageviewer(image_data: ImagePassed) -> Msg {
+#[derive(Serialize, Deserialize)]
+struct PassIt {
+    imagedata: ImagePassed,
+}
 
-    #[derive(Serialize,Deserialize)]
-    struct PassIt {
-        imagedata: ImagePassed,
+async fn delete_image(image_data: ImageData) -> Msg {
+    let result = invoke(
+        "delete_image",
+        to_value(&PassIt {
+            imagedata: (&image_data).into(),
+        })
+        .unwrap(),
+    )
+    .await;
+    let result: bool = serde_wasm_bindgen::from_value(result).unwrap_or(false);
+    match result {
+        true => {
+            log("Deleting!");
+            let res = removeFile(&image_data.file_path, None);
+            log(&format!("File delete result: {res:?}"));
+            Msg::BrowserReload
+        }
+        false => {
+            log("NOT Deleting!");
+            Msg::ImageHandler {
+                image_data: image_data.clone(),
+            }
+        }
     }
+}
 
+async fn load_image_for_imageviewer(image_data: ImagePassed) -> Msg {
     let image_response = invoke(
         "get_image",
-        to_value(&PassIt{ imagedata: image_data.clone() }).unwrap()
-    ).await;
+        to_value(&PassIt {
+            imagedata: image_data.clone(),
+        })
+        .unwrap(),
+    )
+    .await;
     let image_data: ImageData = match serde_wasm_bindgen::from_value(image_response) {
         Ok(val) => val,
-        Err(err) => return Msg::Error{error: format!("Failed to get image data for {}: {err:?}", image_data.path)}
+        Err(err) => {
+            return Msg::Error {
+                error: format!("Failed to get image data for {}: {err:?}", image_data.path),
+            }
+        }
     };
     Msg::ImageHandler { image_data }
 }
