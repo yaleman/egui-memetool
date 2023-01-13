@@ -97,7 +97,6 @@ pub struct Browser {
     /// Holds the keyboard event listener when the renderer's started.
     pub kbd_listener: Option<EventListener>,
     pub selected_image_offset: u32,
-
 }
 
 // pub fn get_value_from_input_event(e: InputEvent) -> String {
@@ -160,7 +159,7 @@ impl Component for Browser {
                 true
             }
             Msg::BrowserNextImage => {
-                if self.selected_image_offset < PER_PAGE-1 {
+                if self.selected_image_offset < PER_PAGE - 1 {
                     self.selected_image_offset += 1;
                 }
                 true
@@ -327,7 +326,7 @@ impl Browser {
                                         </li>
                                     });
                             }
-                            html!{images.into_iter().map(|f| f).collect::<Html>()}
+                            html!{images.into_iter().collect::<Html>()}
                         }
                     }
                 </ul>
@@ -386,7 +385,8 @@ impl Browser {
                 "ArrowLeft" => ctx.link().send_message(Msg::BrowserPrevImage),
                 "ArrowRight" => ctx.link().send_message(Msg::BrowserNextImage),
                 "Enter" => {
-                    let image_data = self.files_list
+                    let image_data = self
+                        .files_list
                         .get(self.selected_image_offset as usize)
                         .unwrap()
                         .to_owned();
