@@ -50,6 +50,8 @@ pub enum Msg {
     },
     Browser,
     BrowserReload,
+    BrowserNextImage,
+    BrowserPrevImage,
     ScrollFirst,
     ScrollLeft,
     ScrollRight,
@@ -81,6 +83,8 @@ pub struct BrowserProps {
     pub limit: u32,
     #[prop_or_default]
     pub files_list: Vec<ImageData>,
+    #[prop_or(0)]
+    pub selected_image_offset: u32,
 }
 
 pub struct Browser {
@@ -92,6 +96,8 @@ pub struct Browser {
     pub window_mode: WindowMode,
     /// Holds the keyboard event listener when the renderer's started.
     pub kbd_listener: Option<EventListener>,
+    pub selected_image_offset: u32,
+
 }
 
 // pub fn get_value_from_input_event(e: InputEvent) -> String {
@@ -121,6 +127,7 @@ impl Component for Browser {
             total_files: 0,
             window_mode: WindowMode::Browser,
             kbd_listener: None,
+            selected_image_offset: 0,
         }
     }
 
@@ -146,9 +153,23 @@ impl Component for Browser {
                 self.window_mode = WindowMode::Browser;
                 true
             }
+            Msg::BrowserPrevImage => {
+                if self.selected_image_offset > 0 {
+                    self.selected_image_offset -= 1;
+                }
+                true
+            }
+            Msg::BrowserNextImage => {
+                if self.selected_image_offset < PER_PAGE-1 {
+                    self.selected_image_offset += 1;
+                }
+                true
+            }
+
             Msg::BrowserReload => {
                 self.get_new_files(ctx);
                 self.window_mode = WindowMode::Browser;
+                self.selected_image_offset = 0;
                 true
             }
             Msg::ImageAction {
@@ -275,26 +296,38 @@ impl Browser {
                         if self.files_list.is_empty() {
                             html!{<p>{ "No files found or could not read dir..." }</p>}
                         } else {
-                            self.files_list.clone().into_iter().map(|f| {
+                            let mut images = vec![];
+                            for (index, f) in self.files_list.iter().enumerate() {
+                            // self.files_list.iter().enumerate().map(|(index, f)| {
                                 let image_data = ImagePassed {
                                     path: f.file_path.clone(),
                                     file_url: f.file_url.clone().unwrap(),
-                                    image_format: f.file_type,
+                                    image_format: f.file_type.clone(),
                                 };
-                                html!{
-                                    <div class="img_block">
-                                        <img
-                                            src={f.file_url.clone()}
-                                            style="max-width: 197px; max-height: 197px;"
-                                            alt={f.file_path.clone()}
-                                            onclick={ctx.link().callback(move |_| {
-                                                Msg::ImageLoad { image_data: image_data.to_owned() }
-                                            })}
+                                let img_class = match index as u32 == self.selected_image_offset {
+                                    true => "img_block_selected",
+                                    false => "img_block",
+                                };
+                                images.push(
+                                    html!{
+                                        <li class="imagelist">
+                                        <div class={img_class}>
+                                            <center>
+                                            <img
+                                                src={f.file_url.clone()}
+                                                class="img_block"
+                                                alt={f.file_path.clone()}
+                                                onclick={
+                                                ctx.link().callback(move |_| {
+                                                    Msg::ImageLoad { image_data: image_data.to_owned() }
+                                                })}
 
-                                        />
-                                    </div>
-                                }
-                            }).collect::<Html>()
+                                            /></center>
+                                        </div>
+                                        </li>
+                                    });
+                            }
+                            html!{images.into_iter().map(|f| f).collect::<Html>()}
                         }
                     }
                 </ul>
@@ -350,6 +383,15 @@ impl Browser {
             WindowMode::Browser => match key_event.key().as_str() {
                 "PageUp" => ctx.link().send_message(Msg::ScrollLeft),
                 "PageDown" => ctx.link().send_message(Msg::ScrollRight),
+                "ArrowLeft" => ctx.link().send_message(Msg::BrowserPrevImage),
+                "ArrowRight" => ctx.link().send_message(Msg::BrowserNextImage),
+                "Enter" => {
+                    let image_data = self.files_list
+                        .get(self.selected_image_offset as usize)
+                        .unwrap()
+                        .to_owned();
+                    ctx.link().send_message(Msg::ImageHandler { image_data })
+                }
                 "Home" => ctx.link().send_message(Msg::ScrollFirst),
                 _ => {
                     log(&format!(

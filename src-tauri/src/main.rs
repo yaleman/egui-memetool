@@ -67,21 +67,11 @@ async fn get_image(imagedata: ImagePassed) -> Result<ImageData, ()> {
 
 #[tauri::command]
 async fn delete_image(window: Window, imagedata: ImagePassed) -> Result<bool, ()> {
-    let result = confirm(
+    Ok(confirm(
         Some(&window),
         "File Deletion",
         format!("Delete {}?", imagedata.path,),
-    );
-    match result {
-        true => {
-            eprintln!("yes");
-            Ok(true)
-        }
-        false => {
-            eprintln!("no!");
-            Ok(false)
-        }
-    }
+    ))
 }
 
 #[tokio::main]
@@ -94,8 +84,8 @@ async fn main() {
 
     tauri::Builder::default()
         .setup(|app| {
-            #[cfg(debug_assertions)]
-            app.get_window("main").unwrap().open_devtools();
+            // #[cfg(debug_assertions)]
+            // app.get_window("main").unwrap().open_devtools();
 
             if let Err(err) = app.get_window("main").unwrap().maximize() {
                 eprintln!("Failed to maximize window: {err:?}");
