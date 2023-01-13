@@ -161,8 +161,8 @@ pub struct PathArgs<'a> {
 impl From<&ImageData> for ImagePassed {
     fn from(input: &ImageData) -> ImagePassed {
         ImagePassed {
-            path: input.file_path.clone(),
-            file_url: input.file_url.clone().unwrap(),
+            path: input.file_path.to_owned(),
+            file_url: input.file_url.to_owned().unwrap(),
             image_format: None,
         }
     }
