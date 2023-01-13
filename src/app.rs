@@ -224,22 +224,10 @@ impl Browser {
         ));
     }
 
-    fn get_css(&self) -> Html {
-        html! {<style type="text/css">
-        {"
-        .img_block {
-            width: 200px;
-            height: 200px;
-            display: inline-block;
-            vertical-align: middle;
-        }"}
-        </style>}
-    }
 
     fn browser_view(&self, ctx: &Context<Self>) -> Html {
         html! {
             <>
-                {self.get_css()}
                 <div class="row">
                     if self.offset >= PER_PAGE {
                         <button onclick={ ctx.link().callback(move |_| Msg::ScrollFirst) }>{"First Page"}</button>
@@ -307,8 +295,6 @@ impl Browser {
         };
         html! {
             <>
-
-            {self.get_css()}
             <div class="row">
                 <button autofocus=true onclick={ctx.link().callback(move |_| Msg::Browser)}>{"Back"}</button>
                 // <button onclick={ctx.link().callback(move |event| Msg::MouseEvent{event})}>{"Test"}</button>

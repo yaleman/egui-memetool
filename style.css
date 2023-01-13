@@ -103,3 +103,11 @@ button {
     background-color: #0f0f0f98;
   }
 }
+
+.img_block {
+  width: 300px;
+  height: 200px;
+  display: inline-block;
+  vertical-align: middle;
+  text-align: center;
+}
