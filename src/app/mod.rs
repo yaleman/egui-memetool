@@ -6,6 +6,8 @@ use yew::prelude::*;
 
 use memetool_shared::{FileList, ImageAction, ImageData, ImagePassed, PathArgs, RESIZE_DEFAULTS};
 
+pub mod imagehandler;
+
 const PER_PAGE: u32 = 20;
 
 #[wasm_bindgen]
