@@ -41,8 +41,8 @@
 
     "bundle": {
       "active": true,
-      "category": "DeveloperTool",
-      "copyright": "",
+      "category": "Productivity",
+      "copyright": "James Hodgkinson 2022-Now",
       "deb": {
         "depends": []
       },
@@ -59,7 +59,8 @@
         "exceptionDomain": "",
         "frameworks": [],
         "providerShortName": null,
-        "signingIdentity": null
+        "signingIdentity": null,
+        "minimumSystemVersion": "12.0"
       },
       "resources": [
       ],
