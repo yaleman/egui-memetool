@@ -47,18 +47,18 @@ impl Component for ImageRenamer{
         html!{
             <>
             <form>
-            <div class="main">
-                <div class="row" width="95%">
-                    <div class="col">{"Original path: "}</div>
-                    <div class="col">{self.original_path.clone()}</div>
-                </div>
-                <div class="row">
-                    <div class="col">{"New Path: "}</div>
-                    <div class="col min-width: 80%">
+            <table cellpadding="3" cellspacing="0" width="100%">
+                <tr>
+                    <td class="col">{"Original path: "}</td>
+                    <td class="col">{self.original_path.clone()}</td>
+                </tr>
+                <tr>
+                    <td class="col">{"New Path: "}</td>
+                    <td class="col min-width: 80%">
                         <input type="text" name="new_path" style="min-width: 80%; max-width: 100%" value={file_name} />
-                        </div>
-                </div>
-            </div>
+                        </td>
+                </tr>
+            </table>
             </form>
             {new_path}
             </>
