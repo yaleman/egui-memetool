@@ -50,6 +50,9 @@ pub enum Msg {
         image_data: ImageData,
         action: ImageAction,
     },
+    ShowImageRename {
+        image_data: ImageData,
+    },
     Browser,
     BrowserReload,
     BrowserNextImage,
@@ -73,6 +76,9 @@ pub enum Msg {
 pub enum WindowMode {
     Browser,
     ImageHandler { image_data: ImageData },
+    ImageRenamer {
+        image_data: ImageData,
+    },
 }
 
 #[derive(Clone, Properties, Eq, PartialEq)]
@@ -209,6 +215,10 @@ impl Component for Browser {
                 self.get_new_files(ctx);
                 true
             }
+            Msg::ShowImageRename { image_data } => {
+                self.window_mode = WindowMode::ImageRenamer { image_data };
+                true
+            }
             Msg::GotImages { files } => {
                 let mut images: Vec<ImageData> = vec![];
 
@@ -240,6 +250,11 @@ impl Component for Browser {
         match self.window_mode.clone() {
             WindowMode::Browser => self.browser_view(ctx),
             WindowMode::ImageHandler { image_data } => self.imagehandler_view(ctx, image_data),
+            WindowMode::ImageRenamer { image_data } => {
+                html!{
+                    <imagehandler::ImageRenamer original_path={image_data.file_path} />
+                }
+            }
         }
     }
 
@@ -358,10 +373,10 @@ impl Browser {
             </div>
             // TODO: add image data, file size, width/height etc.
             <div class="row">
-                <div class="col">
+                <div class="col imageHandlerCol">
                     <img
                     src={image_data.file_url.clone()}
-                    style="max-width: 50%; max-height: 100%;"
+                    style="max-width: 100%; max-height: 100%;"
                     alt={image_data.file_path}
                     // onclick={ctx.link().callback(move |_| {
                     //     Msg::ImageHandler{file_path: file_path.to_owned() }
@@ -372,6 +387,12 @@ impl Browser {
                 <div class="col">
                     {dimension_data}
                     {filename_data}
+
+                    <h3>{"Available actions:"}</h3>
+                    <ul>
+                    <li>{"r - Rename"}</li>
+                    <li>{"s - reSize"}</li>
+                    </ul>
                 </div>
             </div>
 
@@ -416,7 +437,7 @@ impl Browser {
                     },
                     "r" => {
                         log("r!");
-                        ctx.link().send_message(Msg::ImageAction {image_data, action: ImageAction::Rename { new_path: "herpaderpa".to_string() } })
+                        ctx.link().send_message(Msg::ShowImageRename { image_data })
                     },
                     "s" => {
                         log("reSizing!");
@@ -433,6 +454,18 @@ impl Browser {
                         key_event.key()
                     ))
                 }
+            },
+            WindowMode::ImageRenamer { image_data } => {
+                match key_event.key().as_str() {
+                    "Escape" => {
+                        ctx.link().send_message(Msg::ImageHandler { image_data: image_data.to_owned() });
+                    }
+                    _ => log(&format!(
+                        "Key event in ImageHandler({image_data:?}), no action required. Pressed: {:?}",
+                        key_event.key()
+                    ))
+                }
+
             }
         }
     }
