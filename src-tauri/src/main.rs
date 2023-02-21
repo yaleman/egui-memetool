@@ -79,13 +79,12 @@ async fn main() {
     tauri::async_runtime::set(tokio::runtime::Handle::current());
 
     // let icon_path = std::path::PathBuf::from("icons/apple-touch-icon-base.png");
-
     // let icon = Icon::File(icon_path);
 
     tauri::Builder::default()
         .setup(|app| {
-            // #[cfg(debug_assertions)]
-            // app.get_window("main").unwrap().open_devtools();
+            #[cfg(debug_assertions)]
+            app.get_window("main").unwrap().open_devtools();
 
             if let Err(err) = app.get_window("main").unwrap().maximize() {
                 eprintln!("Failed to maximize window: {err:?}");

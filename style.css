@@ -133,3 +133,9 @@ img.img_block  {
   max-width: 197px;
   max-height: 197px;
 }
+
+div.imageRenamerBody {
+  width: 90%;
+  margin: auto;
+  margin-top: 2.0em;
+}
