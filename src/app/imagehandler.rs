@@ -71,7 +71,8 @@ impl Component for ImageRenamer{
                     e.prevent_default(); // block navigating on submit
                     log(&format!("{:?}", e));
 
-                    log(&format!("Event target: {:?}", e.event_target()));
+                    log(&format!("Event target: {:?}", e.target()));
+                    log(&format!("Event value: {:?}", e.value_of()));
 
                     ImageRenamerMsg::Commit{ new_filename: "asdfasdf".to_string() }
             })
