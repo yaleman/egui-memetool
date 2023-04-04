@@ -98,13 +98,11 @@ impl ImageData {
         match ImageReader::open(path) {
             Ok(val) => match val.with_guessed_format() {
                 Ok(val) => Ok(val),
-                Err(err) => {
-                    return Err(format!(
-                        "Failed to identify format of image {path}: {err:?}"
-                    ))
-                }
+                Err(err) => Err(format!(
+                    "Failed to identify format of image {path}: {err:?}"
+                )),
             },
-            Err(err) => return Err(format!("Failed to read image from {path}: {err:?}")),
+            Err(err) => Err(format!("Failed to read image from {path}: {err:?}")),
         }
     }
 

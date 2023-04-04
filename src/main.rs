@@ -6,6 +6,4 @@
 //     yew::Renderer::<MainApp>::new().render();
 // }
 
-fn main() {
-
-}
+fn main() {}
