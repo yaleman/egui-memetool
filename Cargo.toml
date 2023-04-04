@@ -8,7 +8,7 @@ edition = "2021"
 eframe = "0.21.3"
 egui_extras = { version = "0.21.0", features = ["svg", "image"] }
 gloo = "0.8.0"
-image.workspace = true
+image = {workspace = true}
 js-sys = { workspace = true }
 lazy_static = "1.4.0"
 memetool_shared = { workspace = true }
