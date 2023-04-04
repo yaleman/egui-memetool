@@ -1,7 +1,11 @@
-mod app;
+// mod app;
 
-use app::MainApp;
+// use app::MainApp;
+
+// fn main() {
+//     yew::Renderer::<MainApp>::new().render();
+// }
 
 fn main() {
-    yew::Renderer::<MainApp>::new().render();
+
 }
