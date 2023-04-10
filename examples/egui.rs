@@ -2,14 +2,17 @@
 #[macro_use]
 extern crate lazy_static;
 
+use itertools::Itertools;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use eframe::egui::{self, RichText, TextStyle};
 use eframe::epaint::{ColorImage, FontFamily, FontId, Vec2};
 use egui_extras::RetainedImage;
-use poll_promise::Promise;
-use rayon::prelude::*;
+// use rayon::prelude::*;
+use tokio::runtime::Runtime;
+use tokio::sync::mpsc::{Receiver, Sender};
 
 lazy_static! {
     static ref OK_EXTENSIONS: Vec<&'static str> = vec!["jpg", "gif", "png", "jpeg",];
@@ -49,7 +52,25 @@ fn configure_text_styles(ctx: &egui::Context) {
 #[derive(Clone)]
 enum AppState {
     Browser,
+    Editor{
+        filepath: String,
+        image: Arc<RetainedImage>,
+    },
 }
+
+// #[derive(Eq, PartialEq)]
+enum AppMsg {
+    ThumbImageResponse(ThumbImageResponse),
+    NewAppState(AppState),
+
+}
+
+struct ThumbImageResponse {
+    filepath: String,
+    page: usize,
+    image: Arc<RetainedImage>,
+}
+
 
 struct MemeTool {
     /// Current working directory
@@ -59,13 +80,73 @@ struct MemeTool {
     pub app_state: AppState,
     pub last_checked: Option<String>,
     pub per_page: usize,
-    pub browser_images: Vec<Arc<RetainedImage>>,
-    pub promise: Option<Promise<Box<MemeTool>>>,
+    pub browser_images: Vec<ThumbImageResponse>,
+    pub background_rx: Receiver<AppMsg>,
+    pub background_tx: Sender<AppMsg>,
 }
 
-impl Default for MemeTool {
-    fn default() -> Self {
+impl eframe::App for MemeTool {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if let Ok(msg) = self.background_rx.try_recv() {
+            match msg {
+                AppMsg::ThumbImageResponse(image_response) => {
+                    if image_response.page == self.current_page {
+                        eprintln!("got response for: {}", image_response.filepath);
+                        self.browser_images.push(image_response);
+                        ctx.request_repaint_after(Duration::from_millis(100));
+                    } else {
+                        eprintln!(
+                            "Got a message for page {}, but we're on page {}",
+                            image_response.page, self.current_page
+                        );
+                    }
+                },
+                AppMsg::NewAppState(new_state) => {
+                    self.app_state = new_state;
+                    ctx.request_repaint();
+                },
+            }
+
+        }
+
+        match &self.app_state {
+            AppState::Browser => self.show_browser(ctx.clone()),
+            AppState::Editor { filepath, image } => {
+                // eprintln!("Showing editor: {}", filepath);
+                egui::CentralPanel::default().show(&ctx, |ui| {
+                    if ui.button("Back").clicked() {
+                        let tx = self.background_tx.clone();
+                        tokio::spawn(async move {
+                            if let Err(_) = tx.send(AppMsg::NewAppState(AppState::Browser)).await {
+                                eprintln!("Tried to update appstate and failed!");
+                            };
+                        });
+                    };
+                    ui.label(filepath);
+
+                    image.show(ui);
+                });
+
+            },
+        }
+        ctx.request_repaint_after(Duration::from_millis(100));
+    }
+}
+
+impl MemeTool {
+    /// sets some things up
+    fn new(
+        cc: &eframe::CreationContext<'_>,
+        // background_rx: Receiver<BackgroundMessage>,
+        // background_tx: Sender<BackgroundMessage>,
+    ) -> Self {
+        configure_text_styles(&cc.egui_ctx);
+
+        let (background_tx, background_rx) = tokio::sync::mpsc::channel(100);
+
         Self {
+            background_rx,
+            background_tx,
             workdir: "~/Downloads".into(),
             files_list: vec![],
             current_page: 0,
@@ -73,31 +154,7 @@ impl Default for MemeTool {
             last_checked: None,
             per_page: *PER_PAGE,
             browser_images: vec![],
-            promise: None,
         }
-    }
-}
-
-impl eframe::App for MemeTool {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        match self.app_state {
-            AppState::Browser => self.show_browser(&ctx),
-        }
-    }
-}
-
-fn threadout(workdir: String, current_page: usize, on_done: Box<dyn FnOnce(Box<MemeTool>) + Send>) {
-    std::thread::Builder::new()
-        .name("ehttp".to_owned())
-        .spawn(move || on_done(update_files_list(workdir, current_page)))
-        .expect("Failed to spawn ehttp thread");
-}
-
-impl MemeTool {
-    /// sets some things up
-    fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        configure_text_styles(&cc.egui_ctx);
-        Self::default()
     }
 
     /// Get a given page of file results
@@ -112,26 +169,49 @@ impl MemeTool {
         }
     }
 
-    /// build a threaded promisey thing to update images in the backend.
+    // build a threaded promisey thing to update images in the backend.
     fn start_update(&mut self, ctx: &egui::Context) {
         self.browser_images = vec![];
+
+        let resolvedpath = shellexpand::tilde(&self.workdir);
+        self.files_list = match std::fs::read_dir(resolvedpath.to_string()) {
+            Ok(dirlist) => dirlist
+                .sorted_by_key(
+                    |d| d.as_ref().unwrap().file_name().into_string().unwrap_or("".into()),
+                ).filter_map(|filename| match filename {
+                    Ok(val) => {
+                        let pathstr = val.path().clone();
+                        let pathstr = pathstr.to_string_lossy().to_lowercase();
+                        if OK_EXTENSIONS
+                            .iter()
+                            .any(|ext| pathstr.ends_with(&format!(".{ext}")))
+                        {
+                            Some(val.path().to_path_buf().to_owned())
+                        } else {
+                            None
+                        }
+                    }
+                    Err(_) => None,
+                })
+                .collect(),
+            Err(_) => vec![],
+        };
         eprintln!("Starting update in thread...");
-        let ctx = ctx.clone();
-        let (sender, promise) = Promise::new();
-        threadout(
-            self.workdir.clone(),
-            self.current_page,
-            Box::new(move |result| {
-                sender.send(result);
-                ctx.request_repaint();
-            }),
-        );
-        self.promise = Some(promise);
+
+        self.get_page().iter().for_each(|filepath| {
+            send_req(
+                self.current_page,
+                filepath.to_owned(),
+                self.background_tx.clone(),
+                ctx.clone(),
+            );
+            eprintln!("Sent message for: {}", filepath.display());
+        });
     }
 
-    fn show_browser(&mut self, ctx: &egui::Context) {
-        println!("starting show_browser repaint");
-        egui::CentralPanel::default().show(ctx, |ui| {
+    fn show_browser(&mut self, ctx: egui::Context) {
+        // println!("starting show_browser repaint");
+        egui::CentralPanel::default().show(&ctx, |ui| {
             match &self.last_checked {
                 Some(val) => {
                     if val != &self.workdir {
@@ -175,34 +255,26 @@ impl MemeTool {
             });
             ui.add_space(15.0);
 
-            if let Some(promise) = &self.promise {
-                // we got an update back!
-                if let Some(result) = promise.ready() {
-                    self.last_checked = result.last_checked.to_owned();
-                    self.browser_images = result.browser_images.to_owned();
-                    self.files_list = result.files_list.to_owned();
-                    self.promise = None;
-                } else {
-                    ui.label("Updating...");
-                };
-            } else {
-                // ui.label("Updating...");
-            }
-
             egui::Grid::new("browser")
                 .num_columns(5)
                 .spacing([10.0, 10.0]) // grid spacing
                 .show(ui, |ui| {
                     let mut col = 0;
-
-                    for image in &self.browser_images {
-                        image.show_max_size(ui, *THUMBNAIL_SIZE);
+                    self.browser_images.iter().sorted_by_key(|i| &i.filepath).for_each(|i| {
+                        let image = i.image.show_max_size(ui, *THUMBNAIL_SIZE);
+                        let imageresponse = image.interact(egui::Sense::click());
+                        if imageresponse.clicked() {
+                            self.app_state = AppState::Editor{
+                                filepath: i.filepath.clone(),
+                                image: i.image.clone(),
+                            };
+                        };
                         col += 1;
                         if col > 4 {
                             col = 0;
                             ui.end_row();
                         }
-                    }
+                    });
                 });
 
             ui.add_space(15.0);
@@ -217,7 +289,6 @@ impl MemeTool {
                 ui.label(format!("Current page: {}", self.current_page))
             });
         });
-        eprintln!("Finishing show_browser repaint");
     }
 }
 
@@ -236,13 +307,29 @@ fn load_image_to_thumbnail(filename: &PathBuf) -> Result<RetainedImage, String> 
 
     let ci = ColorImage::from_rgba_unmultiplied(size, pixels.as_slice());
 
-    Ok(egui_extras::RetainedImage::from_color_image(
+    let response = egui_extras::RetainedImage::from_color_image(
         filename.to_string_lossy(),
         ci,
-    ))
+    );
+
+    Ok(response)
 }
 
 fn main() -> Result<(), eframe::Error> {
+    let rt = Runtime::new().expect("Unable to create Runtime");
+    // Enter the runtime so that `tokio::spawn` is available immediately.
+    let _enter = rt.enter();
+
+    // Execute the runtime in its own thread.
+    // The future doesn't have to do anything. In this example, it just sleeps forever.
+    std::thread::spawn(move || {
+        rt.block_on(async {
+            loop {
+                tokio::time::sleep(Duration::from_secs(3600)).await;
+            }
+        })
+    });
+
     // calculating the window size for great profit
     let min_window_size = Some(Vec2::new(
         THUMBNAIL_SIZE.x as f32 * *GRID_X as f32,
@@ -267,7 +354,7 @@ fn main() -> Result<(), eframe::Error> {
         hardware_acceleration: eframe::HardwareAcceleration::Preferred,
         renderer: eframe::Renderer::Glow,
         follow_system_theme: true,
-        // default_theme: todo!(),
+        default_theme: eframe::Theme::Light,
         // run_and_return: todo!(),
         // event_loop_builder: todo!(),
         // shader_version: todo!(),
@@ -282,48 +369,63 @@ fn main() -> Result<(), eframe::Error> {
     )
 }
 
-fn update_files_list(workdir: String, current_page: usize) -> Box<MemeTool> {
-    eprintln!("***** UPDATING FILES LIST from {} *****", workdir);
-    let resolvedpath = shellexpand::tilde(&workdir);
-
-    let files_list = match std::fs::read_dir(resolvedpath.to_string()) {
-        Ok(dirlist) => dirlist
-            .filter_map(|filename| match filename {
-                Ok(val) => {
-                    let pathstr = val.path().clone();
-                    let pathstr = pathstr.to_string_lossy().to_lowercase();
-                    if OK_EXTENSIONS
-                        .iter()
-                        .any(|ext| pathstr.ends_with(&format!(".{ext}")))
-                    {
-                        Some(val.path().to_path_buf().to_owned())
-                    } else {
-                        None
-                    }
-                }
-                Err(_) => None,
-            })
-            .collect(),
-        Err(_) => vec![],
-    };
-    let mut memetool = MemeTool {
-        current_page,
-        workdir: workdir.clone(),
-        last_checked: Some(workdir),
-        files_list,
-        ..Default::default()
-    };
-
-    memetool.browser_images = memetool
-        .get_page()
-        .par_iter()
-        .filter_map(|filepath| match load_image_to_thumbnail(&filepath) {
-            Ok(val) => Some(Arc::new(val)),
-            Err(err) => {
-                eprintln!("Failed to load {}: {}", filepath.to_string_lossy(), err);
-                None
-            }
-        })
-        .collect();
-    Box::new(memetool)
+fn send_req(page: usize, filepath: PathBuf, tx: Sender<AppMsg>, ctx: egui::Context) {
+    tokio::spawn(async move {
+        // Send a request with an increment value.
+        let response = AppMsg::ThumbImageResponse(ThumbImageResponse{
+            filepath: filepath.display().to_string(),
+            page,
+            image: Arc::new(load_image_to_thumbnail(&filepath).unwrap()),
+        });
+        println!("Sending response for {}", filepath.display());
+        let _ = tx.send(response).await;
+        // After parsing the response, notify the GUI thread
+        ctx.request_repaint_after(Duration::from_millis(100));
+    });
 }
+
+// fn update_files_list(workdir: String, current_page: usize) -> Box<MemeTool> {
+//     eprintln!("***** UPDATING FILES LIST from {} *****", workdir);
+//     let resolvedpath = shellexpand::tilde(&workdir);
+
+//     let files_list = match std::fs::read_dir(resolvedpath.to_string()) {
+//         Ok(dirlist) => dirlist
+//             .filter_map(|filename| match filename {
+//                 Ok(val) => {
+//                     let pathstr = val.path().clone();
+//                     let pathstr = pathstr.to_string_lossy().to_lowercase();
+//                     if OK_EXTENSIONS
+//                         .iter()
+//                         .any(|ext| pathstr.ends_with(&format!(".{ext}")))
+//                     {
+//                         Some(val.path().to_path_buf().to_owned())
+//                     } else {
+//                         None
+//                     }
+//                 }
+//                 Err(_) => None,
+//             })
+//             .collect(),
+//         Err(_) => vec![],
+//     };
+//     let mut memetool = MemeTool {
+//         current_page,
+//         workdir: workdir.clone(),
+//         last_checked: Some(workdir),
+//         files_list,
+//         ..Default::default()
+//     };
+
+//     memetool.browser_images = memetool
+//         .get_page()
+//         .par_iter()
+//         .filter_map(|filepath| match load_image_to_thumbnail(&filepath) {
+//             Ok(val) => Some(Arc::new(val)),
+//             Err(err) => {
+//                 eprintln!("Failed to load {}: {}", filepath.to_string_lossy(), err);
+//                 None
+//             }
+//         })
+//         .collect();
+//     Box::new(memetool)
+// }
