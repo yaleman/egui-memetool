@@ -5,7 +5,7 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
-eframe = "0.21.3"
+eframe = { version = "0.21.3", features = ["puffin"] }
 egui_extras = { version = "0.21.0", features = ["svg", "image"] }
 itertools = "0.10.5"
 lazy_static = "1.4.0"
@@ -16,3 +16,7 @@ image = "0.24.5"
 serde = { version = "1.0.140", features = ["derive"] }
 serde_json = { version = "1.0" }
 shellexpand = "3.0.0"
+puffin = { version = "0.14.3", features = ["serde"] }
+puffin_egui = "0.20.0"
+log = { version = "0.4.17", features = ["serde"] }
+pretty_env_logger = "0.4.0"

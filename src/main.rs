@@ -2,10 +2,6 @@
 #[macro_use]
 extern crate lazy_static;
 
-mod image;
-use crate::image::load_image_to_thumbnail;
-
-use itertools::Itertools;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -14,8 +10,15 @@ use std::time::Duration;
 use eframe::egui::{self, RichText, TextStyle};
 use eframe::epaint::{FontFamily, FontId, Vec2};
 use egui_extras::RetainedImage;
+use log::*;
+use itertools::Itertools;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::{Receiver, Sender};
+
+
+mod image;
+use crate::image::load_image_to_thumbnail;
+
 
 lazy_static! {
     static ref OK_EXTENSIONS: Vec<&'static str> = vec!["jpg", "gif", "png", "jpeg",];
@@ -92,12 +95,12 @@ impl eframe::App for MemeTool {
             match msg {
                 AppMsg::ThumbImageResponse(image_response) => {
                     if image_response.page == self.current_page {
-                        eprintln!("got response for: {}", image_response.filepath);
+                        debug!("got response for: {}", image_response.filepath);
                         self.browser_images
                             .insert(image_response.filepath.clone(), image_response);
                         ctx.request_repaint_after(Duration::from_millis(100));
                     } else {
-                        eprintln!(
+                        debug!(
                             "Got a message for page {}, but we're on page {}",
                             image_response.page, self.current_page
                         );
@@ -144,6 +147,11 @@ impl MemeTool {
         // background_rx: Receiver<BackgroundMessage>,
         // background_tx: Sender<BackgroundMessage>,
     ) -> Self {
+
+
+        pretty_env_logger::init();
+
+
         configure_text_styles(&cc.egui_ctx);
 
         let (background_tx, background_rx) = tokio::sync::mpsc::channel(100);
@@ -214,7 +222,7 @@ impl MemeTool {
                 self.background_tx.clone(),
                 ctx.clone(),
             );
-            eprintln!("Sent message for: {}", filepath.display());
+            // eprintln!("Sent message for: {}", filepath.display());
         });
     }
 
@@ -314,12 +322,15 @@ impl MemeTool {
                         self.get_page().len()
                     ));
                 };
+
+
             });
         });
     }
 }
 
 fn send_req(page: usize, filepath: PathBuf, tx: Sender<AppMsg>, ctx: egui::Context) {
+    puffin::profile_scope!("image loader");
     tokio::spawn(async move {
         // Send a request with an increment value.
         let response = AppMsg::ThumbImageResponse(ThumbImageResponse {
@@ -327,7 +338,7 @@ fn send_req(page: usize, filepath: PathBuf, tx: Sender<AppMsg>, ctx: egui::Conte
             page,
             image: Arc::new(load_image_to_thumbnail(&filepath).unwrap()),
         });
-        println!("Sending response for {}", filepath.display());
+        // eprintln!("Sending response for {}", filepath.display());
         let _ = tx.send(response).await;
         // After parsing the response, notify the GUI thread
         ctx.request_repaint_after(Duration::from_millis(100));
