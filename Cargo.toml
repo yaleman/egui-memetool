@@ -2,6 +2,28 @@
 name = "memetool"
 version = "0.0.1"
 edition = "2021"
+authors = [
+    "James Hodgkinson <james@terminaloutcomes.com>",
+]
+description = "Meme management tool"
+rust-version = "1.66"
+documentation = "https://docs.rs/memetool"
+repository = "https://github.com/yaleman/memetool"
+homepage = "https://github.com/yaleman/memetool"
+license = "MIT"
+
+[package.metadata.bundle]
+identifier = "com.terminaloutcomes.memetool"
+icon = [
+    "assets/app-icon.png",
+    "assets/apple-touch-icon-base.png",
+    "assets/apple-touch-icon-iphone-retina-120x120.png",
+]
+osx_frameworks = []
+osx_minimum_system_version = "12.6"
+osx_url_schemes = [
+    "com.terminaloutcomes.memetool",
+]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
@@ -9,9 +31,7 @@ eframe = { version = "0.21.3", features = ["puffin"] }
 egui_extras = { version = "0.21.0", features = ["svg", "image"] }
 itertools = "0.10.5"
 lazy_static = "1.4.0"
-rayon = "1.7.0"
 tokio = { version = "1.27.0", features = ["sync", "full"] }
-base64 = "0.21.0"
 image = "0.24.5"
 serde = { version = "1.0.140", features = ["derive"] }
 serde_json = { version = "1.0" }

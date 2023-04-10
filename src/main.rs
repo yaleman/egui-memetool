@@ -7,18 +7,17 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use eframe::egui::{self, RichText, TextStyle};
-use eframe::epaint::{FontFamily, FontId, Vec2};
+use eframe::egui::{self, RichText, TextStyle, TextureOptions};
+use eframe::epaint::{vec2, FontFamily, FontId, Vec2};
+use eframe::IconData;
 use egui_extras::RetainedImage;
-use log::*;
 use itertools::Itertools;
+use log::*;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::{Receiver, Sender};
 
-
-mod image;
-use crate::image::load_image_to_thumbnail;
-
+mod image_utils;
+use crate::image_utils::load_image_to_thumbnail;
 
 lazy_static! {
     static ref OK_EXTENSIONS: Vec<&'static str> = vec!["jpg", "gif", "png", "jpeg",];
@@ -58,10 +57,7 @@ fn configure_text_styles(ctx: &egui::Context) {
 #[derive(Clone)]
 enum AppState {
     Browser,
-    Editor {
-        filepath: String,
-        image: Arc<RetainedImage>,
-    },
+    Editor { filepath: String },
 }
 
 // #[derive(Eq, PartialEq)]
@@ -87,6 +83,7 @@ struct MemeTool {
     pub browser_images: HashMap<String, ThumbImageResponse>, // TODO: this should be a hashmap of filename, image
     pub background_rx: Receiver<AppMsg>,
     pub background_tx: Sender<AppMsg>,
+    loading_image: egui::TextureHandle,
 }
 
 impl eframe::App for MemeTool {
@@ -94,17 +91,13 @@ impl eframe::App for MemeTool {
         if let Ok(msg) = self.background_rx.try_recv() {
             match msg {
                 AppMsg::ThumbImageResponse(image_response) => {
-                    if image_response.page == self.current_page {
-                        debug!("got response for: {}", image_response.filepath);
-                        self.browser_images
-                            .insert(image_response.filepath.clone(), image_response);
-                        ctx.request_repaint_after(Duration::from_millis(100));
-                    } else {
-                        debug!(
-                            "Got a message for page {}, but we're on page {}",
-                            image_response.page, self.current_page
-                        );
-                    }
+                    debug!(
+                        "got response for: filepath={} page={}",
+                        image_response.filepath, image_response.page
+                    );
+                    self.browser_images
+                        .insert(image_response.filepath.clone(), image_response);
+                    ctx.request_repaint_after(Duration::from_millis(100));
                 }
                 AppMsg::NewAppState(new_state) => {
                     self.app_state = new_state;
@@ -115,29 +108,21 @@ impl eframe::App for MemeTool {
 
         match &self.app_state {
             AppState::Browser => self.show_browser(ctx.clone()),
-            AppState::Editor { filepath, image } => {
-                // eprintln!("Showing editor: {}", filepath);
-                egui::CentralPanel::default().show(ctx, |ui| {
-                    if ui.button("Back").clicked() {
-                        let tx = self.background_tx.clone();
-                        tokio::spawn(async move {
-                            if tx
-                                .send(AppMsg::NewAppState(AppState::Browser))
-                                .await
-                                .is_err()
-                            {
-                                eprintln!("Tried to update appstate and failed!");
-                            };
-                        });
-                    };
-                    ui.label(filepath);
-
-                    image.show(ui);
-                });
-            }
+            AppState::Editor { filepath } => self.show_editor(ctx.clone(), filepath),
         }
         ctx.request_repaint_after(Duration::from_millis(100));
     }
+}
+
+fn load_image_from_memory(image_data: &[u8]) -> Result<egui::ColorImage, image::ImageError> {
+    let image = image::load_from_memory(image_data)?;
+    let size = [image.width() as _, image.height() as _];
+    let image_buffer = image.to_rgba8();
+    let pixels = image_buffer.as_flat_samples();
+    Ok(egui::ColorImage::from_rgba_unmultiplied(
+        size,
+        pixels.as_slice(),
+    ))
 }
 
 impl MemeTool {
@@ -147,10 +132,13 @@ impl MemeTool {
         // background_rx: Receiver<BackgroundMessage>,
         // background_tx: Sender<BackgroundMessage>,
     ) -> Self {
-
-
         pretty_env_logger::init();
 
+        let loading_image = cc.egui_ctx.load_texture(
+            "loading_image",
+            load_image_from_memory(include_bytes!("../assets/app-icon.png")).unwrap(),
+            TextureOptions::default(),
+        );
 
         configure_text_styles(&cc.egui_ctx);
 
@@ -166,6 +154,7 @@ impl MemeTool {
             last_checked: None,
             per_page: *PER_PAGE,
             browser_images: HashMap::new(),
+            loading_image,
         }
     }
 
@@ -181,11 +170,9 @@ impl MemeTool {
         }
     }
 
-    // build a threaded promisey thing to update images in the backend.
-    fn start_update(&mut self, ctx: &egui::Context) {
-        // TODO: maybe set an upper bound on the cache?
-
+    fn update_files_list(&mut self) {
         let resolvedpath = shellexpand::tilde(&self.workdir);
+
         self.files_list = match std::fs::read_dir(resolvedpath.to_string()) {
             Ok(dirlist) => dirlist
                 .sorted_by_key(|d| {
@@ -213,7 +200,14 @@ impl MemeTool {
                 .collect(),
             Err(_) => vec![],
         };
-        eprintln!("Starting update in thread...");
+    }
+
+    // build a threaded promisey thing to update images in the backend.
+    fn start_update(&mut self, ctx: &egui::Context) {
+        // TODO: maybe set an upper bound on the cache?
+        self.update_files_list();
+
+        debug!("Starting update in thread...");
 
         self.get_page().iter().for_each(|filepath| {
             send_req(
@@ -222,7 +216,7 @@ impl MemeTool {
                 self.background_tx.clone(),
                 ctx.clone(),
             );
-            // eprintln!("Sent message for: {}", filepath.display());
+            debug!("Sent message for: {}", filepath.display());
         });
     }
 
@@ -254,16 +248,22 @@ impl MemeTool {
 
             ui.add_space(15.0);
             ui.horizontal(|ui| {
-                if ui.button("Prev Page").clicked() {
-                    eprintln!("Pref page clicked");
-                    if self.current_page > 0 {
+                if self.current_page > 0 {
+                    if ui.button("First Page").clicked() {
+                        self.current_page = 0;
+                        self.last_checked = None;
+                    };
+
+                    if ui.button("Prev Page").clicked() {
+                        debug!("Pref page clicked");
                         self.current_page -= 1;
                         self.last_checked = None;
                     }
+                    ui.add_space(15.0);
                 }
-                ui.add_space(15.0);
+
                 if ui.button("Next Page").clicked() {
-                    eprintln!("Next page clicked");
+                    debug!("Next page clicked");
                     if self.current_page < (self.files_list.len() / self.per_page) {
                         self.current_page += 1;
                         self.last_checked = None;
@@ -275,7 +275,7 @@ impl MemeTool {
             let mut loaded_images = 0;
 
             egui::Grid::new("browser")
-                .num_columns(5)
+                .num_columns(10)
                 .spacing([10.0, 10.0]) // grid spacing
                 .show(ui, |ui| {
                     let mut col = 0;
@@ -286,22 +286,32 @@ impl MemeTool {
                         .collect();
 
                     filenames.into_iter().sorted().for_each(|filename| {
-                        if let Some(i) = self.browser_images.get(&filename) {
-                            let image = i.image.show_max_size(ui, *THUMBNAIL_SIZE);
-                            let imageresponse = image.interact(egui::Sense::click());
-                            if imageresponse.clicked() {
-                                self.app_state = AppState::Editor {
-                                    filepath: i.filepath.clone(),
-                                    image: i.image.clone(),
-                                };
-                            };
-                            col += 1;
-                            if col > 4 {
-                                col = 0;
-                                ui.end_row();
+                        let image = match self.browser_images.get(&filename) {
+                            Some(i) => {
+                                let space =
+                                    ((THUMBNAIL_SIZE.x - i.image.width() as f32) / 2.0) + 1.0;
+                                ui.add_space(space);
+                                i.image.show_max_size(ui, *THUMBNAIL_SIZE)
                             }
-                            loaded_images += 1;
+                            None => {
+                                ui.add_space((THUMBNAIL_SIZE.x - THUMBNAIL_SIZE.y) / 2.0);
+                                ui.image(
+                                    self.loading_image.id(),
+                                    vec2(THUMBNAIL_SIZE.y, THUMBNAIL_SIZE.y),
+                                )
+                            }
+                        };
+                        let imageresponse = image.interact(egui::Sense::click());
+                        if imageresponse.clicked() {
+                            self.app_state = AppState::Editor { filepath: filename };
+                        };
+
+                        col += 1;
+                        if col > 4 {
+                            col = 0;
+                            ui.end_row();
                         }
+                        loaded_images += 1;
                     });
                 });
 
@@ -322,9 +332,32 @@ impl MemeTool {
                         self.get_page().len()
                     ));
                 };
-
-
             });
+        });
+    }
+
+    fn show_editor(&self, ctx: egui::Context, filepath: &String) {
+        info!("Showing editor: {}", filepath);
+        let image = match self.browser_images.get(filepath) {
+            Some(i) => i.image.clone(),
+            None => todo!(),
+        };
+        egui::CentralPanel::default().show(&ctx, |ui| {
+            if ui.button("Back").clicked() {
+                let tx = self.background_tx.clone();
+                tokio::spawn(async move {
+                    if tx
+                        .send(AppMsg::NewAppState(AppState::Browser))
+                        .await
+                        .is_err()
+                    {
+                        error!("Tried to update appstate and failed!");
+                    };
+                });
+            };
+            ui.label(filepath);
+
+            image.show(ui);
         });
     }
 }
@@ -333,63 +366,25 @@ fn send_req(page: usize, filepath: PathBuf, tx: Sender<AppMsg>, ctx: egui::Conte
     puffin::profile_scope!("image loader");
     tokio::spawn(async move {
         // Send a request with an increment value.
+        let image = match load_image_to_thumbnail(&filepath) {
+            Ok(image) => image,
+            Err(err) => {
+                error!("Failed to load {} {}", filepath.display(), err);
+                return;
+            }
+        };
+
         let response = AppMsg::ThumbImageResponse(ThumbImageResponse {
             filepath: filepath.display().to_string(),
             page,
-            image: Arc::new(load_image_to_thumbnail(&filepath).unwrap()),
+            image: Arc::new(image),
         });
-        // eprintln!("Sending response for {}", filepath.display());
+        trace!("Sending response for {}", filepath.display());
         let _ = tx.send(response).await;
         // After parsing the response, notify the GUI thread
         ctx.request_repaint_after(Duration::from_millis(100));
     });
 }
-
-// fn update_files_list(workdir: String, current_page: usize) -> Box<MemeTool> {
-//     eprintln!("***** UPDATING FILES LIST from {} *****", workdir);
-//     let resolvedpath = shellexpand::tilde(&workdir);
-
-//     let files_list = match std::fs::read_dir(resolvedpath.to_string()) {
-//         Ok(dirlist) => dirlist
-//             .filter_map(|filename| match filename {
-//                 Ok(val) => {
-//                     let pathstr = val.path().clone();
-//                     let pathstr = pathstr.to_string_lossy().to_lowercase();
-//                     if OK_EXTENSIONS
-//                         .iter()
-//                         .any(|ext| pathstr.ends_with(&format!(".{ext}")))
-//                     {
-//                         Some(val.path().to_path_buf().to_owned())
-//                     } else {
-//                         None
-//                     }
-//                 }
-//                 Err(_) => None,
-//             })
-//             .collect(),
-//         Err(_) => vec![],
-//     };
-//     let mut memetool = MemeTool {
-//         current_page,
-//         workdir: workdir.clone(),
-//         last_checked: Some(workdir),
-//         files_list,
-//         ..Default::default()
-//     };
-
-//     memetool.browser_images = memetool
-//         .get_page()
-//         .par_iter()
-//         .filter_map(|filepath| match load_image_to_thumbnail(&filepath) {
-//             Ok(val) => Some(Arc::new(val)),
-//             Err(err) => {
-//                 eprintln!("Failed to load {}: {}", filepath.to_string_lossy(), err);
-//                 None
-//             }
-//         })
-//         .collect();
-//     Box::new(memetool)
-// }
 
 fn main() -> Result<(), eframe::Error> {
     let rt = Runtime::new().expect("Unable to create Runtime");
@@ -406,6 +401,21 @@ fn main() -> Result<(), eframe::Error> {
         })
     });
 
+    let app_icon = include_bytes!("../assets/app-icon.png");
+    let app_icon = match image::load_from_memory(app_icon) {
+        Ok(val) => val,
+        Err(err) => {
+            error!("Failed to load app icon: {:?}", err);
+            panic!();
+        }
+    };
+
+    let app_icon = IconData {
+        rgba: app_icon.to_rgb8().to_vec(),
+        width: 512,
+        height: 512,
+    };
+
     // calculating the window size for great profit
     let min_window_size = Some(Vec2::new(
         THUMBNAIL_SIZE.x * *GRID_X as f32,
@@ -416,7 +426,7 @@ fn main() -> Result<(), eframe::Error> {
         initial_window_size: Some(egui::vec2(800.0, 600.0)),
         decorated: true,
         // drag_and_drop_support: todo!(),
-        // icon_data: Some(IconData::from("hello world")),
+        icon_data: Some(app_icon),
         // initial_window_pos: todo!(),
         min_window_size,
         // max_window_size: todo!(),
@@ -437,7 +447,6 @@ fn main() -> Result<(), eframe::Error> {
         centered: false,
         ..Default::default()
     };
-
     eframe::run_native(
         "memetool",
         options,

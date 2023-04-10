@@ -8,7 +8,7 @@ use crate::THUMBNAIL_SIZE;
 
 pub fn load_image_to_thumbnail(filename: &PathBuf) -> Result<RetainedImage, String> {
     debug!("Loading {}", filename.to_string_lossy());
-    puffin::profile_function!();
+    puffin::profile_function!(filename.display().to_string());
     let image = image::io::Reader::open(filename)
         .map_err(|e| e.to_string())?
         .decode()
