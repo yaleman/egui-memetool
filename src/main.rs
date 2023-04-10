@@ -7,8 +7,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use eframe::egui::{self, RichText, TextStyle, TextureOptions};
-use eframe::epaint::{vec2, FontFamily, FontId, Vec2};
+use eframe::egui::{self, RichText, TextureOptions, Context, Key};
+use eframe::epaint::{vec2, Vec2};
 use eframe::IconData;
 use egui_extras::RetainedImage;
 use itertools::Itertools;
@@ -17,7 +17,9 @@ use tokio::runtime::Runtime;
 use tokio::sync::mpsc::{Receiver, Sender};
 
 mod image_utils;
-use crate::image_utils::load_image_to_thumbnail;
+mod text;
+use crate::image_utils::{load_image_from_memory, load_image_to_thumbnail};
+use text::{configure_text_styles, heading3};
 
 lazy_static! {
     static ref OK_EXTENSIONS: Vec<&'static str> = vec!["jpg", "gif", "png", "jpeg",];
@@ -27,40 +29,12 @@ lazy_static! {
     static ref THUMBNAIL_SIZE: Vec2 = Vec2 { x: 200.0, y: 150.0 };
 }
 
-#[inline]
-fn heading2() -> TextStyle {
-    TextStyle::Name("Heading2".into())
-}
-
-#[inline]
-fn heading3() -> TextStyle {
-    TextStyle::Name("ContextHeading".into())
-}
-
-fn configure_text_styles(ctx: &egui::Context) {
-    use FontFamily::{Monospace, Proportional};
-
-    let mut style = (*ctx.style()).clone();
-    style.text_styles = [
-        (TextStyle::Heading, FontId::new(25.0, Proportional)),
-        (heading2(), FontId::new(22.0, Proportional)),
-        (heading3(), FontId::new(19.0, Proportional)),
-        (TextStyle::Body, FontId::new(16.0, Proportional)),
-        (TextStyle::Monospace, FontId::new(12.0, Monospace)),
-        (TextStyle::Button, FontId::new(12.0, Proportional)),
-        (TextStyle::Small, FontId::new(8.0, Proportional)),
-    ]
-    .into();
-    ctx.set_style(style);
-}
-
 #[derive(Clone)]
 enum AppState {
     Browser,
     Editor { filepath: String },
 }
 
-// #[derive(Eq, PartialEq)]
 enum AppMsg {
     ThumbImageResponse(ThumbImageResponse),
     NewAppState(AppState),
@@ -80,11 +54,15 @@ struct MemeTool {
     pub app_state: AppState,
     pub last_checked: Option<String>,
     pub per_page: usize,
-    pub browser_images: HashMap<String, ThumbImageResponse>, // TODO: this should be a hashmap of filename, image
+    pub browser_images: HashMap<String, ThumbImageResponse>,
     pub background_rx: Receiver<AppMsg>,
     pub background_tx: Sender<AppMsg>,
     loading_image: egui::TextureHandle,
+    allow_shortcuts: bool,
+    key_buffer: Vec<Key>
 }
+
+
 
 impl eframe::App for MemeTool {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
@@ -106,23 +84,24 @@ impl eframe::App for MemeTool {
             }
         }
 
+
+
         match &self.app_state {
             AppState::Browser => self.show_browser(ctx.clone()),
             AppState::Editor { filepath } => self.show_editor(ctx.clone(), filepath),
-        }
-        ctx.request_repaint_after(Duration::from_millis(100));
-    }
-}
+        };
 
-fn load_image_from_memory(image_data: &[u8]) -> Result<egui::ColorImage, image::ImageError> {
-    let image = image::load_from_memory(image_data)?;
-    let size = [image.width() as _, image.height() as _];
-    let image_buffer = image.to_rgba8();
-    let pixels = image_buffer.as_flat_samples();
-    Ok(egui::ColorImage::from_rgba_unmultiplied(
-        size,
-        pixels.as_slice(),
-    ))
+
+        if self.allow_shortcuts
+            // && !ctx.wants_keyboard_input()
+            {
+            self.key_handler(ctx.clone());
+        } else {
+            error!("Not allowing shorcuts!");
+        }
+
+        // ctx.request_repaint_after(Duration::from_millis(100));
+    }
 }
 
 impl MemeTool {
@@ -155,7 +134,67 @@ impl MemeTool {
             per_page: *PER_PAGE,
             browser_images: HashMap::new(),
             loading_image,
+            allow_shortcuts: true,
+            key_buffer: vec![],
         }
+    }
+
+    // TODO: handle_next_page
+    // TODO: handle_prev_page
+
+
+    fn key_handler(&mut self, ctx: Context) {
+
+        ctx.input(|input| {
+            self.key_buffer.iter().for_each(|key| {
+                if input.key_released(key.to_owned()) {
+                    debug!("released! {:?}", key);
+                    match key.clone() {
+                        // Key::ArrowDown => todo!(),
+                        // TODO: this breaks the app
+                        Key::ArrowLeft => {
+                            if let AppState::Browser = self.app_state {
+                                if self.current_page > 0 {
+                                    self.current_page -= 1;
+                                    // ctx.request_repaint_after(Duration::from_millis(100));
+                                }
+                            }
+                        },
+                        Key::ArrowRight => {
+                            if let AppState::Browser = self.app_state {
+                                // if self.current_page > 0 {
+                                    self.current_page += 1;
+                                    // ctx.request_repaint_after(Duration::from_millis(100));
+                                // }
+                            }
+                        },
+                        Key::A => todo!(),
+                        Key::F1 => todo!(),
+                        _ => {}
+                    }
+                }
+            });
+            self.key_buffer.clear();
+
+            if !input.keys_down.is_empty() {
+                for key in input.keys_down.iter() {
+                    if !self.key_buffer.contains(key) {
+                        self.key_buffer.push(key.to_owned());
+                    }
+                }
+            }
+        });
+        // let events = ui.input().events.clone();
+        //     for event in &events {
+        //         // match event {
+        //         //     egui::Event::Key{key, pressed, modifiers} => {
+        //         //         println!("{:?} = {:?}", key, pressed);
+        //         //     },
+        //         //     egui::Event::Text(t) => { println!("Text = {:?}", t) }
+        //         //     _ => {}
+        //         // }
+        //         debug!("Event: {event:?}");
+        // }
     }
 
     /// Get a given page of file results
@@ -200,6 +239,18 @@ impl MemeTool {
                 .collect(),
             Err(_) => vec![],
         };
+
+        let cached_files: Vec<String> = self.browser_images.keys().map(|k| k.to_owned()).collect();
+        let cached_files = cached_files.to_owned();
+
+        for filename in cached_files {
+            let filepath = PathBuf::from(&filename);
+            if !self.files_list.contains(&filepath) {
+                error!("Need to remove {}", filename);
+                self.browser_images.remove(&filename);
+            }
+
+        }
     }
 
     // build a threaded promisey thing to update images in the backend.
@@ -333,6 +384,7 @@ impl MemeTool {
                     ));
                 };
             });
+
         });
     }
 
@@ -340,7 +392,7 @@ impl MemeTool {
         info!("Showing editor: {}", filepath);
         let image = match self.browser_images.get(filepath) {
             Some(i) => i.image.clone(),
-            None => todo!(),
+            None => Arc::new(load_image_to_thumbnail(&PathBuf::from(filepath)).unwrap()),
         };
         egui::CentralPanel::default().show(&ctx, |ui| {
             if ui.button("Back").clicked() {
@@ -382,7 +434,7 @@ fn send_req(page: usize, filepath: PathBuf, tx: Sender<AppMsg>, ctx: egui::Conte
         trace!("Sending response for {}", filepath.display());
         let _ = tx.send(response).await;
         // After parsing the response, notify the GUI thread
-        ctx.request_repaint_after(Duration::from_millis(100));
+        ctx.request_repaint_after(Duration::from_millis(500));
     });
 }
 
