@@ -20,9 +20,9 @@ jobs:
           toolchain: stable
           override: true
           default: true
-          components: bundle
       - name: "Build app"
         run: |
+          cargo install cargo-bundle
           cargo build --release
           cargo bundle --release
       - name: Compress package
