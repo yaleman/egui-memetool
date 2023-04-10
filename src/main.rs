@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use eframe::egui::{self, RichText, TextureOptions, Context, Key};
+use eframe::egui::{self, Context, Key, RichText, TextureOptions};
 use eframe::epaint::{vec2, Vec2};
 use eframe::IconData;
 use egui_extras::RetainedImage;
@@ -59,10 +59,8 @@ struct MemeTool {
     pub background_tx: Sender<AppMsg>,
     loading_image: egui::TextureHandle,
     allow_shortcuts: bool,
-    key_buffer: Vec<Key>
+    key_buffer: Vec<Key>,
 }
-
-
 
 impl eframe::App for MemeTool {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
@@ -84,17 +82,14 @@ impl eframe::App for MemeTool {
             }
         }
 
-
-
         match &self.app_state {
             AppState::Browser => self.show_browser(ctx.clone()),
             AppState::Editor { filepath } => self.show_editor(ctx.clone(), filepath),
         };
 
-
         if self.allow_shortcuts
-            // && !ctx.wants_keyboard_input()
-            {
+        // && !ctx.wants_keyboard_input()
+        {
             self.key_handler(ctx.clone());
         } else {
             error!("Not allowing shorcuts!");
@@ -142,14 +137,12 @@ impl MemeTool {
     // TODO: handle_next_page
     // TODO: handle_prev_page
 
-
     fn key_handler(&mut self, ctx: Context) {
-
         ctx.input(|input| {
             self.key_buffer.iter().for_each(|key| {
                 if input.key_released(key.to_owned()) {
                     debug!("released! {:?}", key);
-                    match key.clone() {
+                    match key {
                         // Key::ArrowDown => todo!(),
                         // TODO: this breaks the app
                         Key::ArrowLeft => {
@@ -159,15 +152,15 @@ impl MemeTool {
                                     // ctx.request_repaint_after(Duration::from_millis(100));
                                 }
                             }
-                        },
+                        }
                         Key::ArrowRight => {
                             if let AppState::Browser = self.app_state {
                                 // if self.current_page > 0 {
-                                    self.current_page += 1;
-                                    // ctx.request_repaint_after(Duration::from_millis(100));
+                                self.current_page += 1;
+                                // ctx.request_repaint_after(Duration::from_millis(100));
                                 // }
                             }
-                        },
+                        }
                         Key::A => todo!(),
                         Key::F1 => todo!(),
                         _ => {}
@@ -241,7 +234,6 @@ impl MemeTool {
         };
 
         let cached_files: Vec<String> = self.browser_images.keys().map(|k| k.to_owned()).collect();
-        let cached_files = cached_files.to_owned();
 
         for filename in cached_files {
             let filepath = PathBuf::from(&filename);
@@ -249,7 +241,6 @@ impl MemeTool {
                 error!("Need to remove {}", filename);
                 self.browser_images.remove(&filename);
             }
-
         }
     }
 
@@ -384,16 +375,12 @@ impl MemeTool {
                     ));
                 };
             });
-
         });
     }
 
     fn show_editor(&self, ctx: egui::Context, filepath: &String) {
         info!("Showing editor: {}", filepath);
-        let image = match self.browser_images.get(filepath) {
-            Some(i) => i.image.clone(),
-            None => Arc::new(load_image_to_thumbnail(&PathBuf::from(filepath)).unwrap()),
-        };
+
         egui::CentralPanel::default().show(&ctx, |ui| {
             if ui.button("Back").clicked() {
                 let tx = self.background_tx.clone();
@@ -407,9 +394,19 @@ impl MemeTool {
                     };
                 });
             };
-            ui.label(filepath);
+            ui.horizontal(|ui| {
+                ui.label(filepath);
+            });
 
-            image.show(ui);
+            load_image_to_thumbnail(
+                &PathBuf::from(filepath),
+                Some(Vec2 {
+                    x: ui.available_width() * 0.9,
+                    y: ui.available_height() * 0.8,
+                }),
+            )
+            .unwrap()
+            .show(ui);
         });
     }
 }
@@ -418,7 +415,7 @@ fn send_req(page: usize, filepath: PathBuf, tx: Sender<AppMsg>, ctx: egui::Conte
     puffin::profile_scope!("image loader");
     tokio::spawn(async move {
         // Send a request with an increment value.
-        let image = match load_image_to_thumbnail(&filepath) {
+        let image = match load_image_to_thumbnail(&filepath, None) {
             Ok(image) => image,
             Err(err) => {
                 error!("Failed to load {} {}", filepath.display(), err);
