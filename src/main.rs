@@ -87,12 +87,10 @@ impl eframe::App for MemeTool {
             AppState::Editor { filepath } => self.show_editor(ctx.clone(), filepath),
         };
 
-        if self.allow_shortcuts
-        // && !ctx.wants_keyboard_input()
-        {
+        if self.allow_shortcuts && !ctx.wants_keyboard_input() {
             self.key_handler(ctx.clone());
         } else {
-            error!("Not allowing shorcuts!");
+            trace!("Not allowing shorcuts!");
         }
 
         // ctx.request_repaint_after(Duration::from_millis(100));
@@ -161,8 +159,8 @@ impl MemeTool {
                                 // }
                             }
                         }
-                        Key::A => todo!(),
-                        Key::F1 => todo!(),
+                        // Key::A => todo!(),
+                        // Key::F1 => todo!(),
                         _ => {}
                     }
                 }
@@ -379,7 +377,7 @@ impl MemeTool {
     }
 
     fn show_editor(&self, ctx: egui::Context, filepath: &String) {
-        info!("Showing editor: {}", filepath);
+        trace!("Showing editor: {}", filepath);
 
         egui::CentralPanel::default().show(&ctx, |ui| {
             if ui.button("Back").clicked() {
@@ -394,6 +392,25 @@ impl MemeTool {
                     };
                 });
             };
+
+            let mut new_filepath = filepath.clone();
+
+            ui.horizontal(|ui| {
+                let file_label = ui.label("File Path:");
+
+                let file_editor = ui
+                    .add(egui::TextEdit::singleline(&mut new_filepath))
+                    .labelled_by(file_label.id);
+
+                if ui.button("Rename").clicked() {
+                    info!("Clicked rename!");
+                };
+
+                if file_editor.changed() {
+                    debug!("Changed filepath: {}", filepath);
+                }
+            });
+
             ui.horizontal(|ui| {
                 ui.label(filepath);
             });
@@ -436,6 +453,10 @@ fn send_req(page: usize, filepath: PathBuf, tx: Sender<AppMsg>, ctx: egui::Conte
 }
 
 fn main() -> Result<(), eframe::Error> {
+    if std::env::var("RUST_LOG").is_err() {
+        std::env::set_var("RUST_LOG", "INFO");
+    }
+
     let rt = Runtime::new().expect("Unable to create Runtime");
     // Enter the runtime so that `tokio::spawn` is available immediately.
     let _enter = rt.enter();
