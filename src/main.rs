@@ -37,6 +37,10 @@ enum AppState {
 
 enum AppMsg {
     ThumbImageResponse(ThumbImageResponse),
+    ImageLoadFailed{
+        filename: String,
+        error: String,
+    },
     NewAppState(AppState),
 }
 
@@ -79,6 +83,11 @@ impl eframe::App for MemeTool {
                     self.app_state = new_state;
                     ctx.request_repaint();
                 }
+                AppMsg::ImageLoadFailed { filename, error } => {
+
+                    // TODO: some kind of herpaderp image error handler thingy?
+                    eprintln!("Failed to load image: {filename}: {error}");
+                },
             }
         }
 
@@ -432,19 +441,21 @@ fn send_req(page: usize, filepath: PathBuf, tx: Sender<AppMsg>, ctx: egui::Conte
     puffin::profile_scope!("image loader");
     tokio::spawn(async move {
         // Send a request with an increment value.
-        let image = match load_image_to_thumbnail(&filepath, None) {
-            Ok(image) => image,
-            Err(err) => {
-                error!("Failed to load {} {}", filepath.display(), err);
-                return;
-            }
+        let response = match load_image_to_thumbnail(&filepath, None) {
+            Ok(image) => AppMsg::ThumbImageResponse(ThumbImageResponse {
+                filepath: filepath.display().to_string(),
+                page,
+                image: Arc::new(image),
+            }),
+            Err(error) => {
+                error!("Failed to load {} {}", filepath.display(), error);
+                AppMsg::ImageLoadFailed {
+                    filename: filepath.display().to_string(),
+                    error,
+                 }
+            },
         };
 
-        let response = AppMsg::ThumbImageResponse(ThumbImageResponse {
-            filepath: filepath.display().to_string(),
-            page,
-            image: Arc::new(image),
-        });
         trace!("Sending response for {}", filepath.display());
         let _ = tx.send(response).await;
         // After parsing the response, notify the GUI thread
