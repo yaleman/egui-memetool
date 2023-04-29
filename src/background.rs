@@ -41,15 +41,43 @@ pub async fn background(mut rx: mpsc::Receiver<AppMsg>, tx: mpsc::Sender<AppMsg>
             } => todo!(),
             AppMsg::NewAppState(xxx) => AppMsg::NewAppState(xxx),
             AppMsg::Echo(_) => todo!(),
+            AppMsg::UploadAborted(_) => panic!("Frontend shouldn't send aborted upload message"),
             AppMsg::UploadImage(filepath) => {
                 debug!("Starting S3 Upload!");
+                let s3_client = crate::s3_upload::S3Client::new();
+                let key = filepath.split('/').last().unwrap();
 
-                AppMsg::UploadComplete(filepath)
-            },
+                match s3_client.head_object(key).await {
+                    Ok(val) => {
+                        info!("File already exists in S3: {:?}", val);
+                        AppMsg::UploadAborted(format!("File Exists in s3: {:?}", val))
+                    }
+                    Err(err) => {
+                        if let crate::s3_upload::S3Result::FileNotFound = err {
+                            // we didn't find the file
+                            debug!("Uploading {} to S3", filepath);
+                            match s3_client.put_object(key, &filepath).await {
+                                Err(err) => AppMsg::Error(format!("{:?}", err)),
+                                // panic!("Failed to upload {} {:?}", filepath, err);
+                                Ok(_) => {
+                                    info!("Successfully uploaded {} to S3", filepath);
+                                    AppMsg::UploadComplete(filepath)
+                                }
+                            }
+                        } else {
+                            AppMsg::Error(format!(
+                                "Failed to check existence of file in S3: {err:?}"
+                            ))
+                        }
+                    }
+                }
+            }
             AppMsg::UploadComplete(filepath) => {
                 panic!("The frontend sent UploadComplete({filepath})");
-
-            },
+            }
+            AppMsg::Error(err) => {
+                AppMsg::Error(format!("The frontend sent Error({err}) to the backend!"))
+            }
         };
 
         // ctx.request_repaint_after(Duration::from_millis(500));

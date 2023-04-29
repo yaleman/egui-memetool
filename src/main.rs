@@ -19,6 +19,7 @@ use tokio::sync::mpsc::{Receiver, Sender};
 
 mod background;
 mod image_utils;
+mod s3_upload;
 mod text;
 use crate::background::*;
 use crate::image_utils::{load_image_from_memory, load_image_to_thumbnail};
@@ -60,7 +61,9 @@ pub enum AppMsg {
     NewAppState(AppState),
     Echo(String),
     UploadImage(String),
+    UploadAborted(String),
     UploadComplete(String),
+    Error(String),
 }
 
 pub struct ThumbImageMsg {
@@ -81,6 +84,9 @@ impl core::fmt::Debug for ThumbImageMsg {
 struct MemeTool {
     /// Current working directory
     pub workdir: String,
+    /// Used in the browser to filter the list of files
+    pub search_box: String,
+    pub search_box_last: String,
     pub files_list: Vec<PathBuf>,
     pub current_page: usize,
     pub app_state: AppState,
@@ -128,14 +134,24 @@ impl eframe::App for MemeTool {
                 }
                 AppMsg::LoadImage(_) => {
                     error!("Backend sent LoadImage() which is bad.");
-                },
-                AppMsg::UploadComplete(filepath) => {
-                    self.app_state = AppState::Editor { filepath }
-                },
-
+                }
+                AppMsg::UploadComplete(filepath) => self.app_state = AppState::Editor { filepath },
+                AppMsg::Error(message) => {
+                    self.app_state = AppState::ShowError {
+                        message,
+                        next_state: None,
+                    }
+                }
+                AppMsg::UploadAborted(message) => {
+                    self.app_state = AppState::ShowError {
+                        message,
+                        next_state: None,
+                    }
+                }
             }
-
         }
+        ctx.request_repaint_after(Duration::from_micros(100));
+
         let app_state = self.app_state.clone();
 
         match app_state {
@@ -152,7 +168,6 @@ impl eframe::App for MemeTool {
             AppState::DeletePrompt(filepath) => self.show_delete_prompt(ctx.clone(), filepath),
             AppState::UploadPrompt(filepath) => self.show_upload_prompt(ctx.clone(), filepath),
             AppState::Uploading(filepath) => self.show_uploading(ctx.clone(), filepath),
-
         };
 
         if self.allow_shortcuts && !ctx.wants_keyboard_input() {
@@ -185,6 +200,8 @@ impl MemeTool {
         Self {
             background_rx,
             background_tx,
+            search_box: "".into(),
+            search_box_last: "".into(),
             workdir: "~/Downloads".into(),
             files_list: vec![],
             current_page: 0,
@@ -212,36 +229,39 @@ impl MemeTool {
                     debug!("released! {:?}", key);
                     match key {
                         // Key::ArrowDown => todo!(),
-
                         Key::Delete => {
                             // if we're in the editor, prompt for deletion
                             if let AppState::Editor { filepath } = &self.app_state {
                                 self.app_state = AppState::DeletePrompt(filepath.clone());
                             }
-                        },
-
-                        Key::Enter => {
-
                         }
-                        Key::Escape => {
-                            match &self.app_state {
-                                AppState::Editor { .. } => {
-                                    debug!("User hit escape in editor...");
-                                    self.app_state = AppState::Browser;
-                                },
-                                AppState::RenameConfirm { filepath, newfilepath: _ } => {
-                                    debug!("User hit escape in rename confirmation...");
-                                    self.app_state = AppState::Editor {
-                                        filepath: filepath.clone(),
-                                    };
-                                }
-                                AppState::DeletePrompt(filepath) => {
-                                    debug!("User hit escape in delete prompt...");
-                                    self.app_state = AppState::Editor { filepath: filepath.clone() };
-                                },
-                                _ => {}
+
+                        Key::Enter => {}
+                        Key::Escape => match &self.app_state {
+                            AppState::Browser => {
+                                self.search_box = "".into();
                             }
-                        }
+                            AppState::Editor { .. } => {
+                                debug!("User hit escape in editor...");
+                                self.app_state = AppState::Browser;
+                            }
+                            AppState::RenameConfirm {
+                                filepath,
+                                newfilepath: _,
+                            } => {
+                                debug!("User hit escape in rename confirmation...");
+                                self.app_state = AppState::Editor {
+                                    filepath: filepath.clone(),
+                                };
+                            }
+                            AppState::DeletePrompt(filepath) => {
+                                debug!("User hit escape in delete prompt...");
+                                self.app_state = AppState::Editor {
+                                    filepath: filepath.clone(),
+                                };
+                            }
+                            _ => {}
+                        },
                         Key::ArrowLeft => {
                             if let AppState::Browser = self.app_state {
                                 if self.current_page > 0 {
@@ -299,10 +319,10 @@ impl MemeTool {
         }
     }
 
-    fn update_files_list(&mut self) {
+    /// returns a list of files in the current working directory
+    fn read_workdir(&self) -> Vec<PathBuf> {
         let resolvedpath = shellexpand::tilde(&self.workdir);
-
-        self.files_list = match std::fs::read_dir(resolvedpath.to_string()) {
+        match std::fs::read_dir(resolvedpath.to_string()) {
             Ok(dirlist) => dirlist
                 .sorted_by_key(|d| {
                     d.as_ref()
@@ -328,7 +348,11 @@ impl MemeTool {
                 })
                 .collect(),
             Err(_) => vec![],
-        };
+        }
+    }
+
+    fn update_files_list(&mut self) {
+        self.files_list = self.read_workdir();
 
         let cached_files: Vec<String> = self.browser_images.keys().map(|k| k.to_owned()).collect();
 
@@ -339,6 +363,32 @@ impl MemeTool {
                 info!("Removing {} from cached files", filename);
                 self.browser_images.remove(&filename);
             }
+        }
+
+        // after we've cleaned up the cache filter based on search
+        if !self.search_box.trim().is_empty() {
+            let search_terms: Vec<String> = self
+                .search_box
+                .trim()
+                .split(' ')
+                .map(str::to_lowercase)
+                .collect();
+            self.files_list = self
+                .files_list
+                .iter()
+                .filter_map(|filepath| {
+                    let filename = filepath
+                        .file_name()
+                        .unwrap()
+                        .to_string_lossy()
+                        .to_lowercase();
+                    if search_terms.iter().all(|term| filename.contains(term)) {
+                        Some(filepath.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
         }
     }
 
@@ -378,20 +428,26 @@ impl MemeTool {
     }
 
     fn check_needs_update(&mut self, ctx: &egui::Context) {
-        match (&self.last_checked_dir, &self.last_checked_page) {
-            (Some(dir), Some(page)) => {
-                if dir != &self.workdir || page != &self.current_page {
-                    self.start_update(ctx)
-                } else {
-                    trace!("no update needed {} == {}", dir, self.workdir);
+        if self.search_box_last != self.search_box {
+            debug!("Search box changed to '{}', updating.", self.search_box);
+            self.start_update(ctx);
+        } else {
+            match (&self.last_checked_dir, &self.last_checked_page) {
+                (Some(dir), Some(page)) => {
+                    if dir != &self.workdir || page != &self.current_page {
+                        self.start_update(ctx)
+                    } else {
+                        trace!("no update needed {} == {}", dir, self.workdir);
+                    }
                 }
-            }
-            (None, None) => {
-                debug!("last_checked is None, starting update");
-                self.start_update(ctx);
-            }
-            _ => {}
+                (None, None) => {
+                    debug!("last_checked is None, starting update");
+                    self.start_update(ctx);
+                }
+                _ => {}
+            };
         };
+        self.search_box_last = self.search_box.clone();
         self.last_checked_dir = Some(self.workdir.clone());
         self.last_checked_page = Some(self.current_page);
     }
@@ -401,16 +457,28 @@ impl MemeTool {
         egui::CentralPanel::default().show(&ctx, |ui| {
             self.check_needs_update(&ctx);
 
+            // ui.horizontal(|ui| {
+            //     let name_label = ui.label(
+            //         RichText::new("Current workdir: ")
+            //             .text_style(heading3())
+            //             .strong(),
+            //     );
+            //     ui.text_edit_singleline(&mut self.workdir)
+            //         .labelled_by(name_label.id);
+            // });
+
+            // search box
             ui.horizontal(|ui| {
-                let name_label = ui.label(
-                    RichText::new("Current workdir: ")
-                        .text_style(heading3())
-                        .strong(),
-                );
-                ui.text_edit_singleline(&mut self.workdir)
-                    .labelled_by(name_label.id);
+                let search_label =
+                    ui.label(RichText::new("Search:").text_style(heading3()).strong());
+                ui.text_edit_singleline(&mut self.search_box)
+                    .labelled_by(search_label.id);
+                if ui.button("Reset").clicked() {
+                    self.search_box = "".to_string();
+                }
             });
 
+            // navigation bars
             ui.add_space(15.0);
             ui.horizontal(|ui| {
                 if self.current_page > 0 {
@@ -526,11 +594,7 @@ impl MemeTool {
     fn set_new_app_state(&mut self, newappstate: AppState) {
         let tx = self.background_tx.clone();
         tokio::spawn(async move {
-            if tx
-                .send(AppMsg::NewAppState(newappstate))
-                .await
-                .is_err()
-            {
+            if tx.send(AppMsg::NewAppState(newappstate)).await.is_err() {
                 error!("Tried to update appstate and failed!");
             };
         });
@@ -553,8 +617,10 @@ impl MemeTool {
                 let file_label = ui.label("File Path:");
 
                 let filename_editor = ui
-                    .add(egui::TextEdit::singleline(&mut self.editor_rename_target)
-                    .desired_width(ctx.available_rect().width()*0.7)) // 70% of the screen width
+                    .add(
+                        egui::TextEdit::singleline(&mut self.editor_rename_target)
+                            .desired_width(ctx.available_rect().width() * 0.7),
+                    ) // 70% of the screen width
                     .labelled_by(file_label.id);
 
                 self.editor_rename_has_focus = filename_editor.has_focus();
@@ -567,7 +633,9 @@ impl MemeTool {
                         ui.label("Parent path doesn't exist!");
                     } else {
                         filename_editor.ctx.input(|i| {
-                            if i.key_pressed(egui::Key::Enter) && filepath != self.editor_rename_target {
+                            if i.key_pressed(egui::Key::Enter)
+                                && filepath != self.editor_rename_target
+                            {
                                 self.set_new_app_state(AppState::RenameConfirm {
                                     filepath: filepath.to_string(),
                                     newfilepath: self.editor_rename_target.clone(),
@@ -598,7 +666,7 @@ impl MemeTool {
             ui.horizontal(|ui| {
                 if ui.button("Back").clicked() {
                     self.set_new_app_state(AppState::Browser);
-                 };
+                };
                 ui.add_space(15.0);
                 if ui.button("Delete Image").clicked() {
                     self.set_new_app_state(AppState::DeletePrompt(filepath.to_string()));
@@ -607,7 +675,6 @@ impl MemeTool {
                 if ui.button("Upload to S3").clicked() {
                     self.set_new_app_state(AppState::UploadPrompt(filepath.to_string()));
                 }
-
             });
             ui.horizontal(|ui| {
                 ui.label("Original Path: ");
@@ -628,7 +695,6 @@ impl MemeTool {
         });
     }
 
-
     fn show_rename_confirm(&mut self, ctx: egui::Context, filepath: String, newfilename: String) {
         egui::CentralPanel::default().show(&ctx, |ui| {
             ui.vertical_centered(|ui| {
@@ -643,17 +709,21 @@ impl MemeTool {
                 ui.label(&newfilename);
             });
             ui.horizontal(|ui| {
-                let confirm = ui.button(RichText::new("Confirm").text_style(egui::TextStyle::Heading));
+                let confirm =
+                    ui.button(RichText::new("Confirm").text_style(egui::TextStyle::Heading));
 
-                let cancel = ui.button(RichText::new("Cancel").text_style(egui::TextStyle::Heading));
+                let cancel =
+                    ui.button(RichText::new("Cancel").text_style(egui::TextStyle::Heading));
 
                 if confirm.clicked() {
                     // rename the file
-                   self.do_rename(&ctx, &filepath, &newfilename);
+                    self.do_rename(&ctx, &filepath, &newfilename);
                 }
 
                 if cancel.clicked() {
-                    self.app_state = AppState::Editor { filepath: filepath.clone() };
+                    self.app_state = AppState::Editor {
+                        filepath: filepath.clone(),
+                    };
                 }
             });
         });
@@ -721,10 +791,7 @@ impl MemeTool {
                     let tx = self.background_tx.clone();
                     let target_filepath = filepath.clone();
                     tokio::spawn(async move {
-                        if let Err(err) = tx
-                            .send(AppMsg::UploadImage(target_filepath))
-                            .await
-                        {
+                        if let Err(err) = tx.send(AppMsg::UploadImage(target_filepath)).await {
                             error!("Failed to send background message: {}", err.to_string());
                         };
                     });
@@ -747,7 +814,6 @@ impl MemeTool {
                 ui.label(filepath);
             });
         });
-
     }
 
     fn do_rename(&mut self, ctx: &Context, filepath: &str, newfilename: &str) {
@@ -838,4 +904,3 @@ fn main() -> Result<(), eframe::Error> {
         Box::new(|cc| Box::new(MemeTool::new(cc, foreground_rx, background_tx))),
     )
 }
-

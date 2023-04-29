@@ -40,3 +40,6 @@ puffin = { version = "0.14.3", features = ["serde"] }
 puffin_egui = "0.20.0"
 log = { version = "0.4.17", features = ["serde"] }
 pretty_env_logger = "0.4.0"
+aws-sdk-s3 = "0.26.0"
+aws-types = "0.55.1"
+aws-config = "0.55.1"
