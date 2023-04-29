@@ -1,21 +1,22 @@
 ---
 name: Rust Testing
-"on": [push]
+"on":
+  push:
 
+env:
+  SCCACHE_GHA_ENABLED: "true"
+  RUSTC_WRAPPER: "sccache"
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   cargo_test:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v3
-      - uses: icepuma/rust-action@master
-        with:
-          args: cargo test
-  cargo_build:
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v3
-      - uses: icepuma/rust-action@master
-        with:
-          args: cargo build
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.3
+      - name: "Cargo build and test"
+        run: |
+          cargo build
+          cargo test

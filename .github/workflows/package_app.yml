@@ -1,0 +1,52 @@
+---
+name: "Build App Packages"
+
+"on":
+  push:
+
+env:
+  SCCACHE_GHA_ENABLED: "true"
+  RUSTC_WRAPPER: "sccache"
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build-macos-package:
+    name: Build macOS App Package
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.3
+      - name: "Build app"
+        run: |
+          cargo install cargo-bundle
+          cargo build --release
+          cargo bundle --release
+      - name: Compress package
+        run: |
+          cd target/release/bundle/osx/ && tar czvf memetool-latest.tgz memetool.app
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: memetool-latest.tar.gz
+          path: |
+            target/release/bundle/osx/
+  upload-to-releases:
+    name: Upload to releases
+    needs: build-macos-package
+    runs-on: ubuntu-latest
+    if: ${{ github.ref == 'refs/heads/main' }}
+    steps:
+      - name: Download previously built debs
+        uses: actions/download-artifact@v3
+        with:
+          name: memetool-latest.tar.gz
+      - uses: "marvinpinto/action-automatic-releases@latest"
+        with:
+          repo_token: "${{ secrets.GITHUB_TOKEN }}"
+          automatic_release_tag: "latest"
+          prerelease: true
+          title: "Packages"
+          files: "*.tgz"
