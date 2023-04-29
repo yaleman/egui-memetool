@@ -41,6 +41,15 @@ pub async fn background(mut rx: mpsc::Receiver<AppMsg>, tx: mpsc::Sender<AppMsg>
             } => todo!(),
             AppMsg::NewAppState(xxx) => AppMsg::NewAppState(xxx),
             AppMsg::Echo(_) => todo!(),
+            AppMsg::UploadImage(filepath) => {
+                debug!("Starting S3 Upload!");
+
+                AppMsg::UploadComplete(filepath)
+            },
+            AppMsg::UploadComplete(filepath) => {
+                panic!("The frontend sent UploadComplete({filepath})");
+
+            },
         };
 
         // ctx.request_repaint_after(Duration::from_millis(500));

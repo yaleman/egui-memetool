@@ -7,7 +7,6 @@ use log::*;
 
 use crate::THUMBNAIL_SIZE;
 
-
 pub async fn load_image_to_thumbnail_async(
     filename: &PathBuf,
     size: Option<Vec2>,
@@ -24,7 +23,6 @@ pub async fn load_image_to_thumbnail_async(
         }
     };
 
-
     let mut contents = vec![];
     if let Err(err) = file.read_to_end(&mut contents).await {
         error!("Failed to read file: {}", err);
@@ -33,7 +31,6 @@ pub async fn load_image_to_thumbnail_async(
     // let image = image::io::Reader::open(filename);
 
     let image = image::load_from_memory(&contents)
-
         // .map_err(|e| e.to_string())?
         // .decode()
         .map_err(|e| e.to_string())?;
