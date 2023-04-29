@@ -51,7 +51,7 @@ pub async fn background(mut rx: mpsc::Receiver<AppMsg>, tx: mpsc::Sender<AppMsg>
                     Ok(val) => {
                         info!("File already exists in S3: {:?}", val);
                         AppMsg::UploadAborted(format!("File Exists in s3: {:?}", val))
-                    },
+                    }
                     Err(err) => {
                         if let crate::s3_upload::S3Result::FileNotFound = err {
                             // we didn't find the file

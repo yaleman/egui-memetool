@@ -141,10 +141,12 @@ impl eframe::App for MemeTool {
                         message,
                         next_state: None,
                     }
-                },
-                AppMsg::UploadAborted(message) => self.app_state = AppState::ShowError {
-                    message,
-                    next_state: None,
+                }
+                AppMsg::UploadAborted(message) => {
+                    self.app_state = AppState::ShowError {
+                        message,
+                        next_state: None,
+                    }
                 }
             }
         }
@@ -350,9 +352,7 @@ impl MemeTool {
     }
 
     fn update_files_list(&mut self) {
-
         self.files_list = self.read_workdir();
-
 
         let cached_files: Vec<String> = self.browser_images.keys().map(|k| k.to_owned()).collect();
 
@@ -367,21 +367,33 @@ impl MemeTool {
 
         // after we've cleaned up the cache filter based on search
         if !self.search_box.trim().is_empty() {
-            let search_terms: Vec<String> = self.search_box.trim().split(" ").map(str::to_lowercase).collect();
-            self.files_list = self.files_list.iter().filter_map(|filepath| {
-                let filename = filepath.file_name().unwrap().to_string_lossy().to_lowercase();
-                if search_terms.iter().all(|term| filename.contains(term)) {
-                    Some(filepath.clone())
-                } else {
-                    None
-                }
-            }).collect();
+            let search_terms: Vec<String> = self
+                .search_box
+                .trim()
+                .split(' ')
+                .map(str::to_lowercase)
+                .collect();
+            self.files_list = self
+                .files_list
+                .iter()
+                .filter_map(|filepath| {
+                    let filename = filepath
+                        .file_name()
+                        .unwrap()
+                        .to_string_lossy()
+                        .to_lowercase();
+                    if search_terms.iter().all(|term| filename.contains(term)) {
+                        Some(filepath.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
         }
-
     }
 
     /// build a threaded promisey thing to update images in the backend.
-    fn  start_update(&mut self, ctx: &egui::Context) {
+    fn start_update(&mut self, ctx: &egui::Context) {
         // TODO: maybe set an upper bound on the cache?
         self.update_files_list();
 
@@ -390,7 +402,6 @@ impl MemeTool {
         let current_page = self.current_page;
 
         self.get_page().into_iter().for_each(|filepath| {
-
             debug!("Sending message for: {}", filepath.display());
             let tx = self.background_tx.clone();
             tokio::spawn(async move {
@@ -439,7 +450,6 @@ impl MemeTool {
         self.search_box_last = self.search_box.clone();
         self.last_checked_dir = Some(self.workdir.clone());
         self.last_checked_page = Some(self.current_page);
-
     }
 
     fn show_browser(&mut self, ctx: egui::Context) {
@@ -459,10 +469,10 @@ impl MemeTool {
 
             // search box
             ui.horizontal(|ui| {
-                let search_label = ui.label(
-                    RichText::new("Search:").text_style(heading3()).strong()
-                );
-                ui.text_edit_singleline(&mut self.search_box).labelled_by(search_label.id);
+                let search_label =
+                    ui.label(RichText::new("Search:").text_style(heading3()).strong());
+                ui.text_edit_singleline(&mut self.search_box)
+                    .labelled_by(search_label.id);
                 if ui.button("Reset").clicked() {
                     self.search_box = "".to_string();
                 }
