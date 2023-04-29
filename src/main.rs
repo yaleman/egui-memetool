@@ -19,6 +19,7 @@ use tokio::sync::mpsc::{Receiver, Sender};
 
 mod background;
 mod image_utils;
+mod s3_upload;
 mod text;
 use crate::background::*;
 use crate::image_utils::{load_image_from_memory, load_image_to_thumbnail};
@@ -61,6 +62,7 @@ pub enum AppMsg {
     Echo(String),
     UploadImage(String),
     UploadComplete(String),
+    Error(String),
 }
 
 pub struct ThumbImageMsg {
@@ -128,13 +130,15 @@ impl eframe::App for MemeTool {
                 }
                 AppMsg::LoadImage(_) => {
                     error!("Backend sent LoadImage() which is bad.");
-                },
-                AppMsg::UploadComplete(filepath) => {
-                    self.app_state = AppState::Editor { filepath }
-                },
-
+                }
+                AppMsg::UploadComplete(filepath) => self.app_state = AppState::Editor { filepath },
+                AppMsg::Error(err) => {
+                    self.app_state = AppState::ShowError {
+                        message: err,
+                        next_state: None,
+                    }
+                }
             }
-
         }
         let app_state = self.app_state.clone();
 
@@ -152,7 +156,6 @@ impl eframe::App for MemeTool {
             AppState::DeletePrompt(filepath) => self.show_delete_prompt(ctx.clone(), filepath),
             AppState::UploadPrompt(filepath) => self.show_upload_prompt(ctx.clone(), filepath),
             AppState::Uploading(filepath) => self.show_uploading(ctx.clone(), filepath),
-
         };
 
         if self.allow_shortcuts && !ctx.wants_keyboard_input() {
@@ -212,36 +215,36 @@ impl MemeTool {
                     debug!("released! {:?}", key);
                     match key {
                         // Key::ArrowDown => todo!(),
-
                         Key::Delete => {
                             // if we're in the editor, prompt for deletion
                             if let AppState::Editor { filepath } = &self.app_state {
                                 self.app_state = AppState::DeletePrompt(filepath.clone());
                             }
-                        },
-
-                        Key::Enter => {
-
                         }
-                        Key::Escape => {
-                            match &self.app_state {
-                                AppState::Editor { .. } => {
-                                    debug!("User hit escape in editor...");
-                                    self.app_state = AppState::Browser;
-                                },
-                                AppState::RenameConfirm { filepath, newfilepath: _ } => {
-                                    debug!("User hit escape in rename confirmation...");
-                                    self.app_state = AppState::Editor {
-                                        filepath: filepath.clone(),
-                                    };
-                                }
-                                AppState::DeletePrompt(filepath) => {
-                                    debug!("User hit escape in delete prompt...");
-                                    self.app_state = AppState::Editor { filepath: filepath.clone() };
-                                },
-                                _ => {}
+
+                        Key::Enter => {}
+                        Key::Escape => match &self.app_state {
+                            AppState::Editor { .. } => {
+                                debug!("User hit escape in editor...");
+                                self.app_state = AppState::Browser;
                             }
-                        }
+                            AppState::RenameConfirm {
+                                filepath,
+                                newfilepath: _,
+                            } => {
+                                debug!("User hit escape in rename confirmation...");
+                                self.app_state = AppState::Editor {
+                                    filepath: filepath.clone(),
+                                };
+                            }
+                            AppState::DeletePrompt(filepath) => {
+                                debug!("User hit escape in delete prompt...");
+                                self.app_state = AppState::Editor {
+                                    filepath: filepath.clone(),
+                                };
+                            }
+                            _ => {}
+                        },
                         Key::ArrowLeft => {
                             if let AppState::Browser = self.app_state {
                                 if self.current_page > 0 {
@@ -526,11 +529,7 @@ impl MemeTool {
     fn set_new_app_state(&mut self, newappstate: AppState) {
         let tx = self.background_tx.clone();
         tokio::spawn(async move {
-            if tx
-                .send(AppMsg::NewAppState(newappstate))
-                .await
-                .is_err()
-            {
+            if tx.send(AppMsg::NewAppState(newappstate)).await.is_err() {
                 error!("Tried to update appstate and failed!");
             };
         });
@@ -553,8 +552,10 @@ impl MemeTool {
                 let file_label = ui.label("File Path:");
 
                 let filename_editor = ui
-                    .add(egui::TextEdit::singleline(&mut self.editor_rename_target)
-                    .desired_width(ctx.available_rect().width()*0.7)) // 70% of the screen width
+                    .add(
+                        egui::TextEdit::singleline(&mut self.editor_rename_target)
+                            .desired_width(ctx.available_rect().width() * 0.7),
+                    ) // 70% of the screen width
                     .labelled_by(file_label.id);
 
                 self.editor_rename_has_focus = filename_editor.has_focus();
@@ -567,7 +568,9 @@ impl MemeTool {
                         ui.label("Parent path doesn't exist!");
                     } else {
                         filename_editor.ctx.input(|i| {
-                            if i.key_pressed(egui::Key::Enter) && filepath != self.editor_rename_target {
+                            if i.key_pressed(egui::Key::Enter)
+                                && filepath != self.editor_rename_target
+                            {
                                 self.set_new_app_state(AppState::RenameConfirm {
                                     filepath: filepath.to_string(),
                                     newfilepath: self.editor_rename_target.clone(),
@@ -598,7 +601,7 @@ impl MemeTool {
             ui.horizontal(|ui| {
                 if ui.button("Back").clicked() {
                     self.set_new_app_state(AppState::Browser);
-                 };
+                };
                 ui.add_space(15.0);
                 if ui.button("Delete Image").clicked() {
                     self.set_new_app_state(AppState::DeletePrompt(filepath.to_string()));
@@ -607,7 +610,6 @@ impl MemeTool {
                 if ui.button("Upload to S3").clicked() {
                     self.set_new_app_state(AppState::UploadPrompt(filepath.to_string()));
                 }
-
             });
             ui.horizontal(|ui| {
                 ui.label("Original Path: ");
@@ -628,7 +630,6 @@ impl MemeTool {
         });
     }
 
-
     fn show_rename_confirm(&mut self, ctx: egui::Context, filepath: String, newfilename: String) {
         egui::CentralPanel::default().show(&ctx, |ui| {
             ui.vertical_centered(|ui| {
@@ -643,17 +644,21 @@ impl MemeTool {
                 ui.label(&newfilename);
             });
             ui.horizontal(|ui| {
-                let confirm = ui.button(RichText::new("Confirm").text_style(egui::TextStyle::Heading));
+                let confirm =
+                    ui.button(RichText::new("Confirm").text_style(egui::TextStyle::Heading));
 
-                let cancel = ui.button(RichText::new("Cancel").text_style(egui::TextStyle::Heading));
+                let cancel =
+                    ui.button(RichText::new("Cancel").text_style(egui::TextStyle::Heading));
 
                 if confirm.clicked() {
                     // rename the file
-                   self.do_rename(&ctx, &filepath, &newfilename);
+                    self.do_rename(&ctx, &filepath, &newfilename);
                 }
 
                 if cancel.clicked() {
-                    self.app_state = AppState::Editor { filepath: filepath.clone() };
+                    self.app_state = AppState::Editor {
+                        filepath: filepath.clone(),
+                    };
                 }
             });
         });
@@ -721,10 +726,7 @@ impl MemeTool {
                     let tx = self.background_tx.clone();
                     let target_filepath = filepath.clone();
                     tokio::spawn(async move {
-                        if let Err(err) = tx
-                            .send(AppMsg::UploadImage(target_filepath))
-                            .await
-                        {
+                        if let Err(err) = tx.send(AppMsg::UploadImage(target_filepath)).await {
                             error!("Failed to send background message: {}", err.to_string());
                         };
                     });
@@ -747,7 +749,6 @@ impl MemeTool {
                 ui.label(filepath);
             });
         });
-
     }
 
     fn do_rename(&mut self, ctx: &Context, filepath: &str, newfilename: &str) {
@@ -838,4 +839,3 @@ fn main() -> Result<(), eframe::Error> {
         Box::new(|cc| Box::new(MemeTool::new(cc, foreground_rx, background_tx))),
     )
 }
-

@@ -43,13 +43,34 @@ pub async fn background(mut rx: mpsc::Receiver<AppMsg>, tx: mpsc::Sender<AppMsg>
             AppMsg::Echo(_) => todo!(),
             AppMsg::UploadImage(filepath) => {
                 debug!("Starting S3 Upload!");
+                let s3_client = crate::s3_upload::S3Client::new();
+                let key = filepath.split('/').last().unwrap();
 
-                AppMsg::UploadComplete(filepath)
-            },
+                match s3_client.head_object(key).await {
+                    Ok(val) => AppMsg::Error(format!("Head object {}: {:?}", key, val)),
+                    Err(err) => {
+                        if let crate::s3_upload::S3Result::FileNotFound = err {
+                            // we didn't find the file
+                            debug!("Uploading {} to S3", filepath);
+                            // if let Err(err) = s3_client.put_object(key, &filepath).await {
+                            //     panic!("Failed to upload {} {:?}", filepath, err);
+
+                            // }
+                            AppMsg::UploadComplete(filepath)
+                        } else {
+                            AppMsg::Error(format!(
+                                "Failed to check existence of file in S3: {err:?}"
+                            ))
+                        }
+                    }
+                }
+            }
             AppMsg::UploadComplete(filepath) => {
                 panic!("The frontend sent UploadComplete({filepath})");
-
-            },
+            }
+            AppMsg::Error(err) => {
+                AppMsg::Error(format!("The frontend sent Error({err}) to the backend!"))
+            }
         };
 
         // ctx.request_repaint_after(Duration::from_millis(500));
