@@ -61,6 +61,7 @@ pub enum AppMsg {
     NewAppState(AppState),
     Echo(String),
     UploadImage(String),
+    UploadAborted(String),
     UploadComplete(String),
     Error(String),
 }
@@ -83,6 +84,9 @@ impl core::fmt::Debug for ThumbImageMsg {
 struct MemeTool {
     /// Current working directory
     pub workdir: String,
+    /// Used in the browser to filter the list of files
+    pub search_box: String,
+    pub search_box_last: String,
     pub files_list: Vec<PathBuf>,
     pub current_page: usize,
     pub app_state: AppState,
@@ -132,14 +136,20 @@ impl eframe::App for MemeTool {
                     error!("Backend sent LoadImage() which is bad.");
                 }
                 AppMsg::UploadComplete(filepath) => self.app_state = AppState::Editor { filepath },
-                AppMsg::Error(err) => {
+                AppMsg::Error(message) => {
                     self.app_state = AppState::ShowError {
-                        message: err,
+                        message,
                         next_state: None,
                     }
+                },
+                AppMsg::UploadAborted(message) => self.app_state = AppState::ShowError {
+                    message,
+                    next_state: None,
                 }
             }
         }
+        ctx.request_repaint_after(Duration::from_micros(100));
+
         let app_state = self.app_state.clone();
 
         match app_state {
@@ -188,6 +198,8 @@ impl MemeTool {
         Self {
             background_rx,
             background_tx,
+            search_box: "".into(),
+            search_box_last: "".into(),
             workdir: "~/Downloads".into(),
             files_list: vec![],
             current_page: 0,
@@ -224,6 +236,9 @@ impl MemeTool {
 
                         Key::Enter => {}
                         Key::Escape => match &self.app_state {
+                            AppState::Browser => {
+                                self.search_box = "".into();
+                            }
                             AppState::Editor { .. } => {
                                 debug!("User hit escape in editor...");
                                 self.app_state = AppState::Browser;
@@ -302,10 +317,10 @@ impl MemeTool {
         }
     }
 
-    fn update_files_list(&mut self) {
+    /// returns a list of files in the current working directory
+    fn read_workdir(&self) -> Vec<PathBuf> {
         let resolvedpath = shellexpand::tilde(&self.workdir);
-
-        self.files_list = match std::fs::read_dir(resolvedpath.to_string()) {
+        match std::fs::read_dir(resolvedpath.to_string()) {
             Ok(dirlist) => dirlist
                 .sorted_by_key(|d| {
                     d.as_ref()
@@ -331,7 +346,13 @@ impl MemeTool {
                 })
                 .collect(),
             Err(_) => vec![],
-        };
+        }
+    }
+
+    fn update_files_list(&mut self) {
+
+        self.files_list = self.read_workdir();
+
 
         let cached_files: Vec<String> = self.browser_images.keys().map(|k| k.to_owned()).collect();
 
@@ -343,10 +364,24 @@ impl MemeTool {
                 self.browser_images.remove(&filename);
             }
         }
+
+        // after we've cleaned up the cache filter based on search
+        if !self.search_box.trim().is_empty() {
+            let search_terms: Vec<String> = self.search_box.trim().split(" ").map(str::to_lowercase).collect();
+            self.files_list = self.files_list.iter().filter_map(|filepath| {
+                let filename = filepath.file_name().unwrap().to_string_lossy().to_lowercase();
+                if search_terms.iter().all(|term| filename.contains(term)) {
+                    Some(filepath.clone())
+                } else {
+                    None
+                }
+            }).collect();
+        }
+
     }
 
     /// build a threaded promisey thing to update images in the backend.
-    fn start_update(&mut self, ctx: &egui::Context) {
+    fn  start_update(&mut self, ctx: &egui::Context) {
         // TODO: maybe set an upper bound on the cache?
         self.update_files_list();
 
@@ -355,6 +390,7 @@ impl MemeTool {
         let current_page = self.current_page;
 
         self.get_page().into_iter().for_each(|filepath| {
+
             debug!("Sending message for: {}", filepath.display());
             let tx = self.background_tx.clone();
             tokio::spawn(async move {
@@ -381,22 +417,29 @@ impl MemeTool {
     }
 
     fn check_needs_update(&mut self, ctx: &egui::Context) {
-        match (&self.last_checked_dir, &self.last_checked_page) {
-            (Some(dir), Some(page)) => {
-                if dir != &self.workdir || page != &self.current_page {
-                    self.start_update(ctx)
-                } else {
-                    trace!("no update needed {} == {}", dir, self.workdir);
+        if self.search_box_last != self.search_box {
+            debug!("Search box changed to '{}', updating.", self.search_box);
+            self.start_update(ctx);
+        } else {
+            match (&self.last_checked_dir, &self.last_checked_page) {
+                (Some(dir), Some(page)) => {
+                    if dir != &self.workdir || page != &self.current_page {
+                        self.start_update(ctx)
+                    } else {
+                        trace!("no update needed {} == {}", dir, self.workdir);
+                    }
                 }
-            }
-            (None, None) => {
-                debug!("last_checked is None, starting update");
-                self.start_update(ctx);
-            }
-            _ => {}
+                (None, None) => {
+                    debug!("last_checked is None, starting update");
+                    self.start_update(ctx);
+                }
+                _ => {}
+            };
         };
+        self.search_box_last = self.search_box.clone();
         self.last_checked_dir = Some(self.workdir.clone());
         self.last_checked_page = Some(self.current_page);
+
     }
 
     fn show_browser(&mut self, ctx: egui::Context) {
@@ -404,16 +447,28 @@ impl MemeTool {
         egui::CentralPanel::default().show(&ctx, |ui| {
             self.check_needs_update(&ctx);
 
+            // ui.horizontal(|ui| {
+            //     let name_label = ui.label(
+            //         RichText::new("Current workdir: ")
+            //             .text_style(heading3())
+            //             .strong(),
+            //     );
+            //     ui.text_edit_singleline(&mut self.workdir)
+            //         .labelled_by(name_label.id);
+            // });
+
+            // search box
             ui.horizontal(|ui| {
-                let name_label = ui.label(
-                    RichText::new("Current workdir: ")
-                        .text_style(heading3())
-                        .strong(),
+                let search_label = ui.label(
+                    RichText::new("Search:").text_style(heading3()).strong()
                 );
-                ui.text_edit_singleline(&mut self.workdir)
-                    .labelled_by(name_label.id);
+                ui.text_edit_singleline(&mut self.search_box).labelled_by(search_label.id);
+                if ui.button("Reset").clicked() {
+                    self.search_box = "".to_string();
+                }
             });
 
+            // navigation bars
             ui.add_space(15.0);
             ui.horizontal(|ui| {
                 if self.current_page > 0 {
