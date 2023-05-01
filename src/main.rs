@@ -680,8 +680,15 @@ impl MemeTool {
                 ui.label("Original Path: ");
                 ui.label(filepath);
             });
+
+            let mut image_width = 0;
+            let mut image_height = 0;
+
             if let Some(image) = &self.editor_image_cache {
+                image_height = image.height();
+                image_width = image.width();
                 image.show(ui);
+
             } else if let Ok(image) = load_image_to_thumbnail(
                 &PathBuf::from(filepath),
                 Some(Vec2 {
@@ -689,10 +696,19 @@ impl MemeTool {
                     y: ui.available_height() * 0.8,
                 }),
             ) {
+                image_height = image.height();
+                image_width = image.width();
                 image.show(ui);
                 self.editor_image_cache = Some(image);
             }
+            ui.label(format!("Image Size: {}x{}", image_width, image_height));
+            // show filepath size on disk
+            if let Ok(metadata) = std::fs::metadata(filepath) {
+
+                ui.label(format!("File Size: {}", humansize::format_size(metadata.len(), humansize::DECIMAL)));
+            }
         });
+
     }
 
     fn show_rename_confirm(&mut self, ctx: egui::Context, filepath: String, newfilename: String) {
