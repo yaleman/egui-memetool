@@ -1,13 +1,12 @@
+//! S3 things
+use anyhow::Result;
 use aws_sdk_s3::config::Credentials;
 use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::{Client, Config};
 use aws_types::region::Region;
-///! S3 things
-use std::io::Read;
-
-use anyhow::{Context, Result};
 use log::*;
-use serde::Deserialize;
+
+use crate::config::Configuration;
 
 #[derive(Debug)]
 #[allow(dead_code)]
@@ -21,30 +20,6 @@ pub enum S3Result {
     FileNotFound,
 }
 
-#[derive(Clone, Deserialize)]
-pub struct S3Configuration {
-    pub s3_access_key_id: String,
-    pub s3_secret_access_key: String,
-    pub s3_bucket: String,
-    pub s3_region: String,
-    // Set a custom endpoint, for example if you're using minio or another alternate S3 provider
-    pub s3_endpoint: Option<String>,
-}
-
-impl S3Configuration {
-    fn try_new(config_toml: String) -> anyhow::Result<Self> {
-        let shellpath = shellexpand::tilde(&config_toml);
-        let configpath = std::path::PathBuf::from(shellpath.as_ref());
-        let mut confighandle = std::fs::File::open(configpath).with_context(|| format!("Failed to open configuration file {}", config_toml))?;
-        let mut configcontents = String::new();
-
-        #[allow(clippy::unwrap_used)]
-        confighandle.read_to_string(&mut configcontents)?;
-
-        serde_json::from_str(&configcontents).with_context(|| format!("Failed to parse configuration file {}", config_toml))
-    }
-}
-
 pub struct S3Client {
     client: Client,
     bucket: String,
@@ -52,11 +27,11 @@ pub struct S3Client {
 
 impl S3Client {
     pub fn try_new() -> anyhow::Result<Self> {
-        let config: S3Configuration = S3Configuration::try_new("~/.config/memetool.json".to_string())?;
+        let config: crate::config::Configuration = Configuration::try_new()?;
         Ok(Self::from(config))
     }
 
-    pub fn from(config: S3Configuration) -> Self {
+    pub fn from(config: Configuration) -> Self {
         let creds = Credentials::new(
             config.s3_access_key_id,
             config.s3_secret_access_key,

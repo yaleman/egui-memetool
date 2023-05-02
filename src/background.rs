@@ -71,8 +71,10 @@ pub async fn background(mut rx: mpsc::Receiver<AppMsg>, tx: mpsc::Sender<AppMsg>
                                 }
                             }
                         }
-                    },
-                    Err(err) => AppMsg::UploadAborted(format!("Failed to create S3 Client: {:?}", err))
+                    }
+                    Err(err) => {
+                        AppMsg::UploadAborted(format!("Failed to create S3 Client: {:?}", err))
+                    }
                 }
             }
             AppMsg::UploadComplete(filepath) => {
