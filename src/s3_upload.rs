@@ -5,6 +5,7 @@ use aws_types::region::Region;
 ///! S3 things
 use std::io::Read;
 
+use anyhow::{Context, Result};
 use log::*;
 use serde::Deserialize;
 
@@ -31,17 +32,16 @@ pub struct S3Configuration {
 }
 
 impl S3Configuration {
-    fn new(config_toml: String) -> Self {
-        let configpath = std::path::PathBuf::from(config_toml);
-        let mut confighandle = std::fs::File::open(configpath).unwrap();
+    fn try_new(config_toml: String) -> anyhow::Result<Self> {
+        let shellpath = shellexpand::tilde(&config_toml);
+        let configpath = std::path::PathBuf::from(shellpath.as_ref());
+        let mut confighandle = std::fs::File::open(configpath).with_context(|| format!("Failed to open configuration file {}", config_toml))?;
         let mut configcontents = String::new();
 
         #[allow(clippy::unwrap_used)]
-        confighandle.read_to_string(&mut configcontents).unwrap();
+        confighandle.read_to_string(&mut configcontents)?;
 
-        serde_json::from_str(&configcontents)
-            .map_err(|error| eprintln!("Failed to load config file: {:?}", error))
-            .unwrap()
+        serde_json::from_str(&configcontents).with_context(|| format!("Failed to parse configuration file {}", config_toml))
     }
 }
 
@@ -51,9 +51,9 @@ pub struct S3Client {
 }
 
 impl S3Client {
-    pub fn new() -> Self {
-        let config = S3Configuration::new("memetool.json".to_string());
-        Self::from(config)
+    pub fn try_new() -> anyhow::Result<Self> {
+        let config: S3Configuration = S3Configuration::try_new("~/.config/memetool.json".to_string())?;
+        Ok(Self::from(config))
     }
 
     pub fn from(config: S3Configuration) -> Self {
