@@ -46,6 +46,8 @@ pub async fn background(mut rx: mpsc::Receiver<AppMsg>, tx: mpsc::Sender<AppMsg>
                 debug!("Starting S3 Upload!");
                 match crate::s3_upload::S3Client::try_new() {
                     Ok(s3_client) => {
+                        // it's safe to use unwrap here because we know the filepath is valid utf8
+                        #[allow(clippy::unwrap_used)]
                         let key = filepath.split('/').last().unwrap();
                         match s3_client.head_object(key).await {
                             Ok(val) => {

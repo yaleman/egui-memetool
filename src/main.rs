@@ -343,7 +343,7 @@ impl MemeTool {
                         .unwrap()
                         .file_name()
                         .into_string()
-                        .unwrap_or("".into())
+                        .unwrap_or("".into()) // if this fails we're having a *really* bad day.
                 })
                 .filter_map(|filename| match filename {
                     Ok(val) => {
@@ -393,8 +393,8 @@ impl MemeTool {
                 .filter_map(|filepath| {
                     let filename = filepath
                         .file_name()
-                        .unwrap()
-                        .to_string_lossy()
+                        .expect("Failed to parse filename from OsStr to String")
+                        .to_string_lossy() // if you're doing bad things with file paths then too bad
                         .to_lowercase();
                     if search_terms.iter().all(|term| filename.contains(term)) {
                         Some(filepath.clone())
@@ -573,11 +573,12 @@ impl MemeTool {
                 }
 
                 ui.label(format!("Number of files: {}", self.files_list.len()));
-                let last_checked = &self.last_checked_dir.as_ref();
-                ui.label(format!(
-                    "Last Checked: {}",
-                    &last_checked.unwrap_or(&"".to_string())
-                ));
+                if let Some(last_checked) = &self.last_checked_dir {
+                    ui.label(format!(
+                        "Last Checked: {}",
+                        last_checked
+                    ));
+                };
                 ui.label(format!("Current page: {}", self.current_page + 1));
                 if loaded_images != self.get_page().len() {
                     ui.label(format!(

@@ -26,11 +26,13 @@ pub struct S3Client {
 }
 
 impl S3Client {
+    /// get you a client with a default config file
     pub fn try_new() -> anyhow::Result<Self> {
         let config: crate::config::Configuration = Configuration::try_new()?;
         Ok(Self::from(config))
     }
 
+    /// Loaded the config already? Get an S3 client.
     pub fn from(config: Configuration) -> Self {
         let creds = Credentials::new(
             config.s3_access_key_id,
@@ -40,7 +42,7 @@ impl S3Client {
             "memetool",
         );
 
-        info!("S3 Creds: {:?}", creds);
+        debug!("S3 Creds: {:?}", creds);
 
         let mut client_config = Config::builder()
             .credentials_provider(creds)
@@ -52,13 +54,8 @@ impl S3Client {
             client_config = client_config.endpoint_url(endpoint_uri);
         };
         let client = Client::from_conf(client_config.build());
-        info!("s3 client config: {:?}", client);
+        debug!("s3 client config: {:?}", client);
 
-        // tokio::spawn( async move {
-        //     println!("{:?}", client.list_buckets().send().await);
-
-        // }
-        // );
         Self {
             client,
             bucket: config.s3_bucket,
