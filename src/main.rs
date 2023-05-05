@@ -8,9 +8,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use eframe::egui::{self, Context, Key, RichText, TextureOptions};
+use config::Configuration;
+use eframe::egui::{self, Context, Grid, Key, RichText, TextureOptions};
 use eframe::epaint::{vec2, Vec2};
-use eframe::IconData;
+// use eframe::IconData;
 use egui_extras::RetainedImage;
 use itertools::Itertools;
 use log::*;
@@ -18,6 +19,7 @@ use tokio::runtime::Runtime;
 use tokio::sync::mpsc::{Receiver, Sender};
 
 mod background;
+mod config;
 mod image_utils;
 mod s3_upload;
 mod text;
@@ -51,6 +53,7 @@ pub enum AppState {
     DeletePrompt(String),
     UploadPrompt(String),
     Uploading(String),
+    Configuration,
 }
 
 #[derive(Debug)]
@@ -102,6 +105,7 @@ struct MemeTool {
     editor_image_cache: Option<RetainedImage>,
     editor_rename_target: String,
     editor_rename_has_focus: bool,
+    configuration: Option<Configuration>,
 }
 
 impl eframe::App for MemeTool {
@@ -168,6 +172,7 @@ impl eframe::App for MemeTool {
             AppState::DeletePrompt(filepath) => self.show_delete_prompt(ctx.clone(), filepath),
             AppState::UploadPrompt(filepath) => self.show_upload_prompt(ctx.clone(), filepath),
             AppState::Uploading(filepath) => self.show_uploading(ctx.clone(), filepath),
+            AppState::Configuration => self.show_config(ctx.clone()),
         };
 
         if self.allow_shortcuts && !ctx.wants_keyboard_input() {
@@ -216,6 +221,7 @@ impl MemeTool {
             editor_image_cache: None,
             editor_rename_target: String::new(),
             editor_rename_has_focus: false,
+            configuration: None,
         }
     }
 
@@ -260,6 +266,11 @@ impl MemeTool {
                                     filepath: filepath.clone(),
                                 };
                             }
+                            AppState::Configuration => {
+                                debug!("User hit escape in config...");
+                                // TODO: save config here
+                                self.app_state = AppState::Browser;
+                            }
                             _ => {}
                         },
                         Key::ArrowLeft => {
@@ -278,9 +289,12 @@ impl MemeTool {
                                 // }
                             }
                         }
+
                         // Key::A => todo!(),
                         // Key::F1 => todo!(),
-                        _ => {}
+                        _ => {
+                            // debug!("Unhandled key: {:?}", key);
+                        }
                     }
                 }
             });
@@ -329,7 +343,7 @@ impl MemeTool {
                         .unwrap()
                         .file_name()
                         .into_string()
-                        .unwrap_or("".into())
+                        .unwrap_or("".into()) // if this fails we're having a *really* bad day.
                 })
                 .filter_map(|filename| match filename {
                     Ok(val) => {
@@ -379,8 +393,8 @@ impl MemeTool {
                 .filter_map(|filepath| {
                     let filename = filepath
                         .file_name()
-                        .unwrap()
-                        .to_string_lossy()
+                        .expect("Failed to parse filename from OsStr to String")
+                        .to_string_lossy() // if you're doing bad things with file paths then too bad
                         .to_lowercase();
                     if search_terms.iter().all(|term| filename.contains(term)) {
                         Some(filepath.clone())
@@ -507,7 +521,7 @@ impl MemeTool {
 
             let mut loaded_images = 0;
 
-            egui::Grid::new("browser")
+            Grid::new("browser")
                 .num_columns(10)
                 .spacing(*GRID_SPACING) // grid spacing
                 .show(ui, |ui| {
@@ -554,12 +568,17 @@ impl MemeTool {
             ui.add_space(15.0);
 
             ui.horizontal(|ui| {
+                if ui.button("Configuration").clicked() {
+                    self.app_state = AppState::Configuration;
+                }
+
                 ui.label(format!("Number of files: {}", self.files_list.len()));
-                let last_checked = &self.last_checked_dir.as_ref();
-                ui.label(format!(
-                    "Last Checked: {}",
-                    &last_checked.unwrap_or(&"".to_string())
-                ));
+                if let Some(last_checked) = &self.last_checked_dir {
+                    ui.label(format!(
+                        "Last Checked: {}",
+                        last_checked
+                    ));
+                };
                 ui.label(format!("Current page: {}", self.current_page + 1));
                 if loaded_images != self.get_page().len() {
                     ui.label(format!(
@@ -664,15 +683,24 @@ impl MemeTool {
                 }
             });
             ui.horizontal(|ui| {
-                if ui.button("Back").clicked() {
+                if ui
+                    .button(RichText::new("Back").text_style(heading3()))
+                    .clicked()
+                {
                     self.set_new_app_state(AppState::Browser);
                 };
                 ui.add_space(15.0);
-                if ui.button("Delete Image").clicked() {
+                if ui
+                    .button(RichText::new("Delete Image").text_style(heading3()))
+                    .clicked()
+                {
                     self.set_new_app_state(AppState::DeletePrompt(filepath.to_string()));
                 };
 
-                if ui.button("Upload to S3").clicked() {
+                if ui
+                    .button(RichText::new("Upload to S3").text_style(heading3()))
+                    .clicked()
+                {
                     self.set_new_app_state(AppState::UploadPrompt(filepath.to_string()));
                 }
             });
@@ -688,7 +716,6 @@ impl MemeTool {
                 image_height = image.height();
                 image_width = image.width();
                 image.show(ui);
-
             } else if let Ok(image) = load_image_to_thumbnail(
                 &PathBuf::from(filepath),
                 Some(Vec2 {
@@ -704,11 +731,12 @@ impl MemeTool {
             ui.label(format!("Image Size: {}x{}", image_width, image_height));
             // show filepath size on disk
             if let Ok(metadata) = std::fs::metadata(filepath) {
-
-                ui.label(format!("File Size: {}", humansize::format_size(metadata.len(), humansize::DECIMAL)));
+                ui.label(format!(
+                    "File Size: {}",
+                    humansize::format_size(metadata.len(), humansize::DECIMAL)
+                ));
             }
         });
-
     }
 
     fn show_rename_confirm(&mut self, ctx: egui::Context, filepath: String, newfilename: String) {
@@ -796,9 +824,9 @@ impl MemeTool {
             });
 
             ui.horizontal(|ui| {
-                let confirm = ui.button("Confirm");
+                let confirm = ui.button(RichText::new("Confirm").text_style(heading3()));
 
-                let cancel = ui.button("Cancel");
+                let cancel = ui.button(RichText::new("Cancel").text_style(heading3()));
 
                 if confirm.clicked() {
                     // rename the file
@@ -829,6 +857,111 @@ impl MemeTool {
                 ui.add_space(2.0);
                 ui.label(filepath);
             });
+        });
+    }
+
+    /// config UI
+    fn show_config(&mut self, ctx: Context) {
+        // load config file
+        if self.configuration.is_none() {
+            self.configuration = match Configuration::try_new() {
+                Ok(val) => Some(val),
+                Err(err) => {
+                    self.app_state = AppState::ShowError {
+                        message: format!("Failed to load configuration: {:?}", err),
+                        next_state: Some(Box::new(AppState::Browser)),
+                    };
+                    return;
+                }
+            }
+        }
+        let mut endpoint_url = String::new();
+
+        if let Some(config) = &self.configuration.as_ref().unwrap().s3_endpoint {
+            endpoint_url = config.to_owned();
+        };
+
+        egui::CentralPanel::default().show(&ctx, |ui| {
+            ui.vertical_centered(|ui| {
+                ui.heading(RichText::new("Configuration").text_style(heading3()));
+            });
+            ui.horizontal(|ui| {
+                // TODO: need to save config here
+                if ui.button("Back").clicked() {
+                    self.app_state = AppState::Browser;
+                    if let Some(config) = self.configuration.as_mut() {
+                        if let Err(err) = config.save() {
+                            self.app_state = AppState::ShowError {
+                                message: format!("Failed to save configuration: {:?}", err),
+                                next_state: Some(Box::new(AppState::Browser)),
+                            };
+                        }
+                    }
+                }
+            });
+
+            ui.heading("S3 Configuration");
+            Grid::new("config_grid")
+                .striped(true)
+                .min_col_width(100.0)
+                .spacing([10.0, 10.0])
+                .num_columns(2)
+                .show(ui, |ui| {
+                    let s3_access_key_id_label = ui.label("S3 Access Key ID");
+                    ui.add(
+                        egui::TextEdit::singleline(
+                            &mut self.configuration.as_mut().unwrap().s3_access_key_id,
+                        )
+                        .desired_width(ctx.available_rect().width() * 0.7),
+                    )
+                    .labelled_by(s3_access_key_id_label.id);
+                    ui.end_row();
+
+                    let s3_secret_access_key_label = ui.label("S3 Secret");
+                    ui.add(
+                        egui::TextEdit::singleline(
+                            &mut self.configuration.as_mut().unwrap().s3_secret_access_key,
+                        )
+                        .password(true)
+                        .desired_width(ctx.available_rect().width() * 0.7),
+                    )
+                    .labelled_by(s3_secret_access_key_label.id);
+                    ui.end_row();
+
+                    let bucket_label = ui.label("S3 Bucket");
+                    ui.add(
+                        egui::TextEdit::singleline(
+                            &mut self.configuration.as_mut().unwrap().s3_bucket,
+                        )
+                        .desired_width(ctx.available_rect().width() * 0.7),
+                    )
+                    .labelled_by(bucket_label.id);
+                    ui.end_row();
+
+                    let region_label = ui.label("S3 Region");
+                    ui.add(
+                        egui::TextEdit::singleline(
+                            &mut self.configuration.as_mut().unwrap().s3_region,
+                        )
+                        .desired_width(ctx.available_rect().width() * 0.7),
+                    )
+                    .labelled_by(region_label.id);
+                    ui.end_row();
+
+                    let endpoint_label = ui.label("S3 Endpoint");
+                    let endpoint = ui
+                        .add(
+                            egui::TextEdit::singleline(&mut endpoint_url)
+                                .desired_width(ctx.available_rect().width() * 0.7),
+                        )
+                        .labelled_by(endpoint_label.id);
+                    // update the internal state
+                    if endpoint.changed() {
+                        self.configuration.as_mut().unwrap().s3_endpoint =
+                            Some(endpoint_url.clone());
+                    }
+                    ui.end_row();
+                });
         });
     }
 
@@ -868,20 +1001,20 @@ fn main() -> Result<(), eframe::Error> {
     // Execute the runtime in its own thread.
     rt.spawn(background(background_rx, foreground_tx));
 
-    let app_icon = include_bytes!("../assets/app-icon.png");
-    let app_icon = match image::load_from_memory(app_icon) {
-        Ok(val) => val,
-        Err(err) => {
-            error!("Failed to load app icon: {:?}", err);
-            panic!();
-        }
-    };
+    // let app_icon = include_bytes!("../assets/app-icon.png");
+    // let app_icon = match image::load_from_memory(app_icon) {
+    //     Ok(val) => val,
+    //     Err(err) => {
+    //         error!("Failed to load app icon: {:?}", err);
+    //         panic!();
+    //     }
+    // };
 
-    let app_icon = IconData {
-        rgba: app_icon.to_rgb8().to_vec(),
-        width: 512,
-        height: 512,
-    };
+    // let app_icon = IconData {
+    //     rgba: app_icon.to_rgb8().to_vec(),
+    //     width: 512,
+    //     height: 512,
+    // };
 
     // calculating the window size for great profit
     let min_window_size = Some(Vec2::new(
@@ -893,7 +1026,7 @@ fn main() -> Result<(), eframe::Error> {
         initial_window_size: Some(egui::vec2(800.0, 600.0)),
         decorated: true,
         // drag_and_drop_support: todo!(),
-        icon_data: Some(app_icon),
+        icon_data: None, // Some(app_icon),
         // initial_window_pos: todo!(),
         min_window_size,
         // max_window_size: todo!(),
@@ -914,6 +1047,7 @@ fn main() -> Result<(), eframe::Error> {
         centered: false,
         ..Default::default()
     };
+
     eframe::run_native(
         "memetool",
         options,

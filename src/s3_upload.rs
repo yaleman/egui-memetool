@@ -1,12 +1,12 @@
+//! S3 things
+use anyhow::Result;
 use aws_sdk_s3::config::Credentials;
 use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::{Client, Config};
 use aws_types::region::Region;
-///! S3 things
-use std::io::Read;
-
 use log::*;
-use serde::Deserialize;
+
+use crate::config::Configuration;
 
 #[derive(Debug)]
 #[allow(dead_code)]
@@ -20,43 +20,20 @@ pub enum S3Result {
     FileNotFound,
 }
 
-#[derive(Clone, Deserialize)]
-pub struct S3Configuration {
-    pub s3_access_key_id: String,
-    pub s3_secret_access_key: String,
-    pub s3_bucket: String,
-    pub s3_region: String,
-    // Set a custom endpoint, for example if you're using minio or another alternate S3 provider
-    pub s3_endpoint: Option<String>,
-}
-
-impl S3Configuration {
-    fn new(config_toml: String) -> Self {
-        let configpath = std::path::PathBuf::from(config_toml);
-        let mut confighandle = std::fs::File::open(configpath).unwrap();
-        let mut configcontents = String::new();
-
-        #[allow(clippy::unwrap_used)]
-        confighandle.read_to_string(&mut configcontents).unwrap();
-
-        serde_json::from_str(&configcontents)
-            .map_err(|error| eprintln!("Failed to load config file: {:?}", error))
-            .unwrap()
-    }
-}
-
 pub struct S3Client {
     client: Client,
     bucket: String,
 }
 
 impl S3Client {
-    pub fn new() -> Self {
-        let config = S3Configuration::new("memetool.json".to_string());
-        Self::from(config)
+    /// get you a client with a default config file
+    pub fn try_new() -> anyhow::Result<Self> {
+        let config: crate::config::Configuration = Configuration::try_new()?;
+        Ok(Self::from(config))
     }
 
-    pub fn from(config: S3Configuration) -> Self {
+    /// Loaded the config already? Get an S3 client.
+    pub fn from(config: Configuration) -> Self {
         let creds = Credentials::new(
             config.s3_access_key_id,
             config.s3_secret_access_key,
@@ -65,7 +42,7 @@ impl S3Client {
             "memetool",
         );
 
-        info!("S3 Creds: {:?}", creds);
+        debug!("S3 Creds: {:?}", creds);
 
         let mut client_config = Config::builder()
             .credentials_provider(creds)
@@ -77,13 +54,8 @@ impl S3Client {
             client_config = client_config.endpoint_url(endpoint_uri);
         };
         let client = Client::from_conf(client_config.build());
-        info!("s3 client config: {:?}", client);
+        debug!("s3 client config: {:?}", client);
 
-        // tokio::spawn( async move {
-        //     println!("{:?}", client.list_buckets().send().await);
-
-        // }
-        // );
         Self {
             client,
             bucket: config.s3_bucket,
