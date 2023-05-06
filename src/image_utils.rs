@@ -28,11 +28,8 @@ pub async fn load_image_to_thumbnail_async(
         error!("Failed to read file: {}", err);
         return Err(err.to_string());
     }
-    // let image = image::io::Reader::open(filename);
 
     let image = image::load_from_memory(&contents)
-        // .map_err(|e| e.to_string())?
-        // .decode()
         .map_err(|e| e.to_string())?;
 
     let (x, y) = match size {

@@ -729,6 +729,7 @@ impl MemeTool {
                 self.editor_image_cache = Some(image);
             }
             ui.label(format!("Image Size: {}x{}", image_width, image_height));
+
             // show filepath size on disk
             if let Ok(metadata) = std::fs::metadata(filepath) {
                 ui.label(format!(
