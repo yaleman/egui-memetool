@@ -355,6 +355,7 @@ impl MemeTool {
                         {
                             Some(val.path())
                         } else {
+                            debug!("Skipping {} due to extension", pathstr);
                             None
                         }
                     }
