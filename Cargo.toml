@@ -27,7 +27,7 @@ osx_url_schemes = [
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
-eframe = { version = "0.21.3", features = ["puffin"] }
+eframe = { version = "0.22.0", features = ["puffin"] }
 egui_extras = { version = "0.22.0", features = ["svg", "image"] }
 itertools = "0.10.5"
 lazy_static = "1.4.0"
