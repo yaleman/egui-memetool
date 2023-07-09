@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use eframe::egui;
 use eframe::epaint::{ColorImage, Vec2};
 use egui_extras::RetainedImage;
+use image::Pixel;
 use log::*;
 
 use crate::THUMBNAIL_SIZE;
@@ -89,4 +90,12 @@ pub fn load_image_from_memory(image_data: &[u8]) -> Result<egui::ColorImage, ima
         size,
         pixels.as_slice(),
     ))
+}
+
+pub fn optimize_image(filename: impl ToString) {
+    let image_object = image::open(filename.to_string())
+        .unwrap();
+    // let image_buffer = image_object
+    //     .to_rgba8().save_with_format(filename.to_string(), image::ImageFormat::Png).unwrap();
+
 }
