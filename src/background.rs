@@ -40,7 +40,9 @@ pub async fn background(mut rx: mpsc::Receiver<AppMsg>, tx: mpsc::Sender<AppMsg>
                 error: _,
             } => todo!(),
             AppMsg::NewAppState(xxx) => AppMsg::NewAppState(xxx),
-            AppMsg::Echo(_) => todo!(),
+            AppMsg::Echo(msg) => {
+                todo!("echo: {}", msg);
+            }
             AppMsg::UploadAborted(_) => panic!("Frontend shouldn't send aborted upload message"),
             AppMsg::UploadImage(filepath) => {
                 debug!("Starting S3 Upload!");

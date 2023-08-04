@@ -16,7 +16,6 @@ use tokio::sync::mpsc::{Receiver, Sender};
 
 use crate::image_utils::load_image_to_thumbnail;
 
-
 #[macro_use]
 extern crate lazy_static;
 
@@ -34,8 +33,6 @@ lazy_static! {
     pub static ref GRID_SPACING: Vec2 = Vec2 { x: 10.0, y: 10.0 };
     pub static ref THUMBNAIL_SIZE: Vec2 = Vec2 { x: 200.0, y: 150.0 };
 }
-
-
 
 #[derive(Clone, Debug)]
 pub enum AppState {
@@ -90,7 +87,7 @@ pub struct MemeTool {
     pub workdir: String,
     /// Used in the browser to filter the list of files
     pub search_box: String,
-    pub search_box_last: String,
+    pub search_box_last: Option<String>,
     pub files_list: Vec<PathBuf>,
     pub current_page: usize,
     pub app_state: AppState,
@@ -207,7 +204,7 @@ impl MemeTool {
             background_rx,
             background_tx,
             search_box: "".into(),
-            search_box_last: "".into(),
+            search_box_last: None,
             workdir: "~/Downloads".into(),
             files_list: vec![],
             current_page: 0,
@@ -225,9 +222,6 @@ impl MemeTool {
             configuration: None,
         }
     }
-
-    // TODO: handle_next_page
-    // TODO: handle_prev_page
 
     fn key_handler(&mut self, ctx: Context) {
         ctx.input(|input| {
@@ -276,18 +270,12 @@ impl MemeTool {
                         },
                         Key::ArrowLeft => {
                             if let AppState::Browser = self.app_state {
-                                if self.current_page > 0 {
-                                    self.current_page -= 1;
-                                    // ctx.request_repaint_after(Duration::from_millis(100));
-                                }
+                                self.browser_prev_page();
                             }
                         }
                         Key::ArrowRight => {
                             if let AppState::Browser = self.app_state {
-                                // if self.current_page > 0 {
-                                self.current_page += 1;
-                                // ctx.request_repaint_after(Duration::from_millis(100));
-                                // }
+                                self.browser_next_page();
                             }
                         }
 
@@ -419,32 +407,22 @@ impl MemeTool {
 
         self.get_page().into_iter().for_each(|filepath| {
             debug!("Sending message for: {}", filepath.display());
-            let tx = self.background_tx.clone();
-            tokio::spawn(async move {
-                if let Err(err) = tx
-                    .send(AppMsg::LoadImage(ThumbImageMsg {
-                        filepath: filepath.display().to_string(),
-                        page: current_page,
-                        image: None,
-                    }))
-                    .await
-                {
-                    error!("Failed to send background message: {}", err.to_string());
-                };
-            });
-
-            // Box::new(send_req(
-            //     self.current_page,
-            //     filepath.to_owned(),
-            //     self.background_tx.clone(),
-            //     ctx.clone(),
-            // ))
+            self.sendmessage(AppMsg::LoadImage(ThumbImageMsg {
+                filepath: filepath.display().to_string(),
+                page: current_page,
+                image: None,
+            }));
         });
         ctx.request_repaint_after(Duration::from_millis(100));
     }
 
     fn check_needs_update(&mut self, ctx: &egui::Context) {
-        if self.search_box_last != self.search_box {
+        if let Some(last_box) = self.search_box_last.clone() {
+            if last_box != self.search_box {
+                debug!("Search box changed to '{}', updating.", self.search_box);
+                self.start_update(ctx);
+            }
+        } else if self.search_box_last.is_none() {
             debug!("Search box changed to '{}', updating.", self.search_box);
             self.start_update(ctx);
         } else {
@@ -463,7 +441,7 @@ impl MemeTool {
                 _ => {}
             };
         };
-        self.search_box_last = self.search_box.clone();
+        self.search_box_last = Some(self.search_box.clone());
         self.last_checked_dir = Some(self.workdir.clone());
         self.last_checked_page = Some(self.current_page);
     }
@@ -499,24 +477,23 @@ impl MemeTool {
             ui.horizontal(|ui| {
                 if self.current_page > 0 {
                     if ui.button("First Page").clicked() {
-                        self.current_page = 0;
-                        self.last_checked_dir = None;
+                        self.browser_first_page();
                     };
 
                     if ui.button("Prev Page").clicked() {
-                        debug!("Pref page clicked");
-                        self.current_page -= 1;
-                        self.last_checked_dir = None;
+                        self.browser_prev_page();
                     }
                     ui.add_space(15.0);
                 }
 
                 if ui.button("Next Page").clicked() {
-                    debug!("Next page clicked");
-                    if self.current_page < (self.files_list.len() / self.per_page) {
-                        self.current_page += 1;
-                        self.last_checked_dir = None;
-                    }
+                    self.browser_next_page();
+                }
+                #[cfg(debug_assertions)]
+                if ui.button("Refresh").clicked() {
+                    debug!("Refresh clicked");
+                    self.search_box_last = None;
+                    self.sendmessage(AppMsg::NewAppState(AppState::Browser));
                 }
             });
             ui.add_space(15.0);
@@ -576,10 +553,7 @@ impl MemeTool {
 
                 ui.label(format!("Number of files: {}", self.files_list.len()));
                 if let Some(last_checked) = &self.last_checked_dir {
-                    ui.label(format!(
-                        "Last Checked: {}",
-                        last_checked
-                    ));
+                    ui.label(format!("Last Checked: {}", last_checked));
                 };
                 ui.label(format!("Current page: {}", self.current_page + 1));
                 if loaded_images != self.get_page().len() {
@@ -613,12 +587,7 @@ impl MemeTool {
     }
 
     fn set_new_app_state(&mut self, newappstate: AppState) {
-        let tx = self.background_tx.clone();
-        tokio::spawn(async move {
-            if tx.send(AppMsg::NewAppState(newappstate)).await.is_err() {
-                error!("Tried to update appstate and failed!");
-            };
-        });
+        self.sendmessage(AppMsg::NewAppState(newappstate))
     }
 
     fn show_editor(&mut self, ctx: egui::Context, filepath: &str) {
@@ -827,24 +796,20 @@ impl MemeTool {
             });
 
             ui.horizontal(|ui| {
-                let confirm = ui.button(RichText::new("Confirm").text_style(heading3()));
-
-                let cancel = ui.button(RichText::new("Cancel").text_style(heading3()));
-
-                if confirm.clicked() {
+                if ui
+                    .button(RichText::new("Confirm").text_style(heading3()))
+                    .clicked()
+                {
                     // rename the file
-
                     debug!("Sending upload message for: {}", filepath);
-                    let tx = self.background_tx.clone();
                     let target_filepath = filepath.clone();
-                    tokio::spawn(async move {
-                        if let Err(err) = tx.send(AppMsg::UploadImage(target_filepath)).await {
-                            error!("Failed to send background message: {}", err.to_string());
-                        };
-                    });
+                    self.sendmessage(AppMsg::UploadImage(target_filepath));
                 }
 
-                if cancel.clicked() {
+                if ui
+                    .button(RichText::new("Cancel").text_style(heading3()))
+                    .clicked()
+                {
                     self.set_new_app_state(AppState::Editor { filepath });
                 }
             });
@@ -986,5 +951,57 @@ impl MemeTool {
                 }
             }
         }
+    }
+
+    /// force-update the browser view
+    fn browser_new_page(&mut self) {
+        self.search_box_last = None;
+        self.last_checked_dir = None;
+        self.sendmessage(AppMsg::NewAppState(AppState::Browser));
+    }
+
+    /// take you to the previous page
+    fn browser_prev_page(&mut self) {
+        debug!("Prev page clicked");
+        if self.current_page > 0 {
+            self.current_page -= 1;
+        }
+        self.browser_new_page();
+    }
+
+    /// take you to the next page
+    fn browser_next_page(&mut self) {
+        debug!("Next page clicked");
+        if self.current_page < (self.files_list.len() / self.per_page) {
+            self.current_page += 1;
+        } else {
+            if self.current_page * self.per_page > self.files_list.len() {
+                error!(
+                    "Current page={} Per page={} Files list len={}",
+                    self.current_page,
+                    self.per_page,
+                    self.files_list.len()
+                );
+            }
+            error!("Uh, too far bruh!");
+        }
+        self.browser_new_page();
+    }
+
+    /// take you to the first page
+    fn browser_first_page(&mut self) {
+        debug!("First page clicked");
+        self.current_page = 0;
+        self.browser_new_page();
+    }
+
+    /// send a message using the internal broadcast channel
+    fn sendmessage(&mut self, msg: AppMsg) {
+        let tx = self.background_tx.clone();
+        tokio::spawn(async move {
+            if let Err(err) = tx.send(msg).await {
+                error!("Failed to send background message: {}", err.to_string());
+            };
+        });
     }
 }
