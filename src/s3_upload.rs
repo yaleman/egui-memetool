@@ -94,9 +94,9 @@ impl S3Client {
                             aws_sdk_s3::operation::head_object::HeadObjectError::NotFound(_) => {
                                 Err(S3Result::FileNotFound)
                             }
-                            aws_sdk_s3::operation::head_object::HeadObjectError::Unhandled(err) => {
-                                Err(S3Result::HeadError(format!("ResponseError: {:?}", err)))
-                            }
+                            // aws_sdk_s3::operation::head_object::HeadObjectError::Unhandled(err) => {
+                            //     Err(S3Result::HeadError(format!("ResponseError: {:?}", err)))
+                            // }
                             _ => todo!(),
                         }
                     }

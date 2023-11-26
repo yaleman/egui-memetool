@@ -523,8 +523,8 @@ impl MemeTool {
                             None => {
                                 ui.add_space((THUMBNAIL_SIZE.x - THUMBNAIL_SIZE.y) / 2.0);
                                 ui.image(
-                                    self.loading_image.id(),
-                                    vec2(THUMBNAIL_SIZE.y, THUMBNAIL_SIZE.y),
+                                    self.loading_image.,
+                                    // vec2(THUMBNAIL_SIZE.y, THUMBNAIL_SIZE.y),
                                 )
                             }
                         };
