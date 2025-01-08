@@ -1,5 +1,7 @@
 # memetool
 
+**ARCHIVED**
+
 A Tauri app to learn how to do things.
 
 ## Running it
@@ -11,7 +13,6 @@ cargo install cargo-tauri
 
 cargo tauri dev
 ```
-
 
 ## Thanks
 
