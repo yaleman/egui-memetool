@@ -28,7 +28,7 @@ jobs:
         run: |
           cd target/release/bundle/osx/ && tar czvf memetool-latest.tgz memetool.app
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: memetool-latest.tar.gz
           path: |
@@ -40,7 +40,7 @@ jobs:
     if: ${{ github.ref == 'refs/heads/main' }}
     steps:
       - name: Download previously built debs
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: memetool-latest.tar.gz
       - uses: "marvinpinto/action-automatic-releases@latest"
